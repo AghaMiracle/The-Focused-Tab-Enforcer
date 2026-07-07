@@ -1,0 +1,86 @@
+version: '3.9'
+
+services:
+  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: fte_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASS:-secret}
+      MONGO_INITDB_DATABASE: focused_tab_enforcer
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    ports:
+      - "27017:27017"
+    networks:
+      - fte_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ───────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: fte_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASS:-secret}@mongodb:27017/focused_tab_enforcer?authSource=admin
+    ports:
+      - "${PORT:-5000}:5000"
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - fte_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Mongo Express (Dev UI) ────────────────────────────────────────────────────
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: fte_mongo_express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USER:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASS:-secret}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASS:-secret}@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_USER:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_PASS:-pass}
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - fte_network
+    profiles:
+      - dev
+
+volumes:
+  mongodb_data:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
+    driver: local
+
+networks:
+  fte_network:
+    driver: bridge
