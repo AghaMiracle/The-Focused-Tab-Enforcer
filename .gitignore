@@ -1,0 +1,77 @@
+# ============================================================
+# Root .gitignore — Focused Tab Enforcer
+# ============================================================
+
+# ─── Environment Variables ──────────────────────────────────
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+**/.env
+**/.env.*
+!**/.env.example
+
+# ─── Node Modules ───────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ─── Build Outputs ──────────────────────────────────────────
+dist/
+dist-extension/
+build/
+.output/
+out/
+
+# ─── Logs ───────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── OS & Editor ────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ─── Coverage & Testing ─────────────────────────────────────
+coverage/
+*.lcov
+.nyc_output/
+
+# ─── Package Managers ───────────────────────────────────────
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ─── Uploads (user-generated files) ─────────────────────────
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# ─── Extension Zip Output ───────────────────────────────────
+*.zip
+
+# ─── Misc ───────────────────────────────────────────────────
+.cache/
+.parcel-cache/
+.turbo/
+.vercel/
+.netlify/

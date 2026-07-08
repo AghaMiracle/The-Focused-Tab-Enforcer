@@ -1,9 +1,29 @@
-node_modules/
+# ─── Environment Variables ──────────────────────────────────
 .env
-uploads/
-logs/
+.env.local
+.env.development
+.env.production
+.env.staging
+!.env.example
+
+# ─── Dependencies ───────────────────────────────────────────
+node_modules/
+
+# ─── Build / Dist ───────────────────────────────────────────
 dist/
+build/
+
+# ─── Logs ───────────────────────────────────────────────────
+logs/
 *.log
+
+# ─── Uploads (user content — never commit) ──────────────────
+uploads/*
+!uploads/.gitkeep
+
+# ─── OS / Editor ────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ─── Test Coverage ──────────────────────────────────────────
 coverage/

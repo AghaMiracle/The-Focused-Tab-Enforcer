@@ -1,20 +1,12 @@
-# ─── Environment Variables ──────────────────────────────────
-.env
-.env.local
-.env.development
-.env.production
-.env.staging
-!.env.example
-
 # ─── Dependencies ───────────────────────────────────────────
 node_modules/
 
 # ─── Build Output ───────────────────────────────────────────
 dist/
-build/
+dist-extension/
 
-# ─── Vite Cache ─────────────────────────────────────────────
-.vite/
+# ─── Zip Packages ───────────────────────────────────────────
+*.zip
 
 # ─── Logs ───────────────────────────────────────────────────
 *.log
@@ -22,6 +14,3 @@ build/
 # ─── OS / Editor ────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# ─── Test Coverage ──────────────────────────────────────────
-coverage/
