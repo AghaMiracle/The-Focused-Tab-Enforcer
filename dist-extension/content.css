@@ -1,0 +1,28 @@
+/*
+ * content.css
+ * Minimal resets for content-script-injected elements.
+ * Full glassmorphism styles are injected programmatically in overlay.js
+ * to keep them scoped and prevent conflicts with page styles.
+ */
+
+#fte-status-bar,
+#fte-warning-overlay,
+#fte-terminated-overlay,
+#fte-face-error {
+  all: initial;
+  box-sizing: border-box;
+}
+
+#fte-status-bar * ,
+#fte-warning-overlay *,
+#fte-terminated-overlay *,
+#fte-face-error * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Push page content down so status bar doesn't cover it */
+body:has(#fte-status-bar) {
+  padding-top: 52px !important;
+}

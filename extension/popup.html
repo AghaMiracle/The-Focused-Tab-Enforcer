@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Focused Tab Enforcer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════════════════ -->
+  <header class="popup-header">
+    <div class="header-brand">
+      <div class="brand-logo">FT</div>
+      <div class="brand-text">
+        <span class="brand-name">Focused Tab</span>
+        <span class="brand-tagline">Exam Monitor</span>
+      </div>
+    </div>
+    <button class="settings-btn" id="settingsBtn" aria-label="Open settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       VIEW: IDLE (no active exam)
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="view" id="view-idle">
+    <div class="status-card status-idle">
+      <div class="status-indicator idle"></div>
+      <p class="status-text">No Active Exam</p>
+      <p class="status-sub">Navigate to your exam page and click<br/>the extension icon to begin verification.</p>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-item">
+        <span class="info-icon">🔒</span>
+        <span class="info-label">Tab Monitoring</span>
+      </div>
+      <div class="info-item">
+        <span class="info-icon">👁</span>
+        <span class="info-label">Face Detection</span>
+      </div>
+      <div class="info-item">
+        <span class="info-icon">📡</span>
+        <span class="info-label">Live Reporting</span>
+      </div>
+      <div class="info-item">
+        <span class="info-icon">🛡</span>
+        <span class="info-label">Anti-Cheat</span>
+      </div>
+    </div>
+
+    <div class="no-key-warning hidden" id="noKeyWarning">
+      <span>⚠</span>
+      <p>Institution API key not configured. <button class="link-btn" id="goToSettings">Open Settings</button></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       VIEW: VERIFY (student login form)
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="view hidden" id="view-verify">
+    <div class="verify-header">
+      <h2 class="verify-title">Start Exam Session</h2>
+      <p class="verify-sub">Enter your credentials to begin monitoring.</p>
+    </div>
+
+    <form class="verify-form" id="verifyForm" novalidate>
+      <div class="field-group">
+        <label class="field-label" for="examId">Exam ID</label>
+        <input
+          class="field-input"
+          type="text"
+          id="examId"
+          name="examId"
+          placeholder="e.g. EXAM-2025-001"
+          autocomplete="off"
+          required
+        />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="email">Email Address</label>
+        <input
+          class="field-input"
+          type="email"
+          id="email"
+          name="email"
+          placeholder="student@university.edu"
+          autocomplete="email"
+          required
+        />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="regNumber">Registration Number</label>
+        <input
+          class="field-input"
+          type="text"
+          id="regNumber"
+          name="regNumber"
+          placeholder="e.g. STU/2021/0042"
+          autocomplete="off"
+          required
+        />
+      </div>
+
+      <div class="error-banner hidden" id="verifyError" role="alert">
+        <span class="error-icon">✕</span>
+        <span class="error-msg" id="verifyErrorMsg"></span>
+      </div>
+
+      <button type="submit" class="btn-primary" id="verifyBtn">
+        <span class="btn-text">Verify &amp; Start Monitoring</span>
+        <span class="btn-loader hidden" id="verifyLoader">
+          <svg class="spinner" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="60" stroke-dashoffset="20"/>
+          </svg>
+        </span>
+      </button>
+    </form>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       VIEW: ACTIVE (exam in progress)
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="view hidden" id="view-active">
+    <!-- Live Status Row -->
+    <div class="active-status">
+      <div class="pulse-dot" id="activePulseDot"></div>
+      <span class="active-status-text" id="activeStatusText">MONITORING ACTIVE</span>
+    </div>
+
+    <!-- Student Info -->
+    <div class="student-card">
+      <div class="student-avatar" id="studentAvatarInitial">S</div>
+      <div class="student-info">
+        <span class="student-name" id="activeStudentName">—</span>
+        <span class="student-exam" id="activeExamTitle">—</span>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-value mono" id="activeTimer">00:00:00</span>
+        <span class="stat-label">Elapsed Time</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value mono violation-count" id="activeViolations">0</span>
+        <span class="stat-label">Violations</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="activeFaceStatus">—</span>
+        <span class="stat-label">Face Status</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="activeConnStatus">Online</span>
+        <span class="stat-label">Connection</span>
+      </div>
+    </div>
+
+    <!-- Offline Banner -->
+    <div class="offline-banner hidden" id="offlineBanner">
+      <span>📡</span>
+      <span>Offline mode — violations are queued locally.</span>
+    </div>
+
+    <!-- End Exam -->
+    <button class="btn-danger" id="endExamBtn">
+      End Exam Session
+    </button>
+
+    <!-- Confirm End Dialog -->
+    <div class="confirm-overlay hidden" id="confirmOverlay">
+      <div class="confirm-card">
+        <p class="confirm-title">End Exam?</p>
+        <p class="confirm-msg">This will terminate your monitoring session and submit your data.</p>
+        <div class="confirm-actions">
+          <button class="btn-cancel" id="cancelEndBtn">Cancel</button>
+          <button class="btn-confirm-end" id="confirmEndBtn">Yes, End Exam</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       FOOTER
+  ══════════════════════════════════════════════════════════════ -->
+  <footer class="popup-footer">
+    <span class="footer-version">v1.0.0</span>
+    <span class="footer-sep">·</span>
+    <a class="footer-link" id="footerSettings" href="#">Settings</a>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

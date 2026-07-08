@@ -1,0 +1,22 @@
+{
+  "name": "focused-tab-enforcer-extension",
+  "version": "1.0.0",
+  "description": "Chrome extension for AI-powered exam monitoring",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build.js --watch",
+    "build": "node scripts/build.js",
+    "download-models": "node scripts/download-models.js",
+    "generate-icons": "node scripts/generate-icons.js",
+    "zip": "node scripts/zip.js",
+    "lint": "eslint *.js utils/*.js"
+  },
+  "devDependencies": {
+    "archiver": "^6.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["chrome-extension", "exam-monitoring", "face-detection"],
+  "license": "UNLICENSED"
+}

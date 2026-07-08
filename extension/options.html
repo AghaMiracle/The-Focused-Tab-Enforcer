@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FTE Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+
+  <div class="opts-layout">
+
+    <!-- ── Sidebar ── -->
+    <aside class="opts-sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">FT</div>
+        <div>
+          <p class="brand-name">Focused Tab Enforcer</p>
+          <p class="brand-version">v1.0.0</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-section="connection" href="#">
+          <span class="nav-icon">🔌</span> Connection
+        </a>
+        <a class="nav-item" data-section="preferences" href="#">
+          <span class="nav-icon">⚙</span> Preferences
+        </a>
+        <a class="nav-item" data-section="about" href="#">
+          <span class="nav-icon">ℹ</span> About
+        </a>
+      </nav>
+    </aside>
+
+    <!-- ── Main Content ── -->
+    <main class="opts-main">
+
+      <!-- ══ Section: Connection ══ -->
+      <section class="opts-section" id="section-connection">
+        <div class="section-header">
+          <h1 class="section-title">Connection Settings</h1>
+          <p class="section-desc">Configure the API key and server URL for your institution.</p>
+        </div>
+
+        <div class="settings-card">
+          <div class="field-group">
+            <label class="field-label" for="institutionKey">
+              Institution API Key
+              <span class="field-badge">Required</span>
+            </label>
+            <div class="input-wrap">
+              <input
+                class="field-input"
+                type="password"
+                id="institutionKey"
+                placeholder="••••••••••••••••••••••••••••"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button class="input-toggle" id="toggleKey" aria-label="Toggle visibility">
+                <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+            <p class="field-hint">Provided by your institution administrator. Found in the institution portal under API Settings.</p>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="serverUrl">Server URL</label>
+            <input
+              class="field-input"
+              type="url"
+              id="serverUrl"
+              placeholder="http://localhost:5000"
+              autocomplete="off"
+            />
+            <p class="field-hint">The backend server URL. Default: <code>http://localhost:5000</code></p>
+          </div>
+
+          <div class="connection-test" id="connectionResult" aria-live="polite"></div>
+
+          <div class="card-actions">
+            <button class="btn-secondary" id="testConnectionBtn">Test Connection</button>
+            <button class="btn-primary" id="saveConnectionBtn">Save Settings</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Section: Preferences ══ -->
+      <section class="opts-section hidden" id="section-preferences">
+        <div class="section-header">
+          <h1 class="section-title">Preferences</h1>
+          <p class="section-desc">Customize extension behavior and notifications.</p>
+        </div>
+
+        <div class="settings-card">
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Desktop Notifications</span>
+              <span class="toggle-desc">Show browser notifications for high-severity violations.</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="notificationsToggle" checked />
+              <span class="toggle-track">
+                <span class="toggle-thumb"></span>
+              </span>
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Debug Mode</span>
+              <span class="toggle-desc">Log detailed diagnostics to the browser console. For troubleshooting only.</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="debugToggle" />
+              <span class="toggle-track">
+                <span class="toggle-thumb"></span>
+              </span>
+            </label>
+          </div>
+
+          <div class="card-actions">
+            <button class="btn-primary" id="savePrefsBtn">Save Preferences</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Section: About ══ -->
+      <section class="opts-section hidden" id="section-about">
+        <div class="section-header">
+          <h1 class="section-title">About</h1>
+          <p class="section-desc">Extension information and legal notices.</p>
+        </div>
+
+        <div class="settings-card about-card">
+          <div class="about-logo-wrap">
+            <div class="about-logo">FT</div>
+          </div>
+          <h2 class="about-name">Focused Tab Enforcer</h2>
+          <p class="about-version mono">Version 1.0.0</p>
+          <p class="about-desc">
+            AI-powered exam monitoring extension that ensures academic integrity through
+            real-time tab focus tracking and facial presence detection. All processing
+            is performed locally — no video footage is transmitted.
+          </p>
+
+          <div class="about-features">
+            <div class="feature-item">
+              <span class="feature-dot"></span>
+              <span>Tab &amp; window focus monitoring</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-dot"></span>
+              <span>Client-side face detection (face-api.js)</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-dot"></span>
+              <span>Head pose estimation</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-dot"></span>
+              <span>Anti-cheat keyboard/context-menu blocking</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-dot"></span>
+              <span>Offline violation queuing &amp; sync</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-dot"></span>
+              <span>Real-time backend reporting</span>
+            </div>
+          </div>
+
+          <p class="about-privacy">
+            🔒 <strong>Privacy first:</strong> Face detection runs entirely in your browser.
+            Only violation metadata (timestamps, types) — never images or video — is sent to the server.
+          </p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── Toast ── -->
+  <div class="toast" id="toast" aria-live="polite"></div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

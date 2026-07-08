@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!--
+  generate-icons.html
+  Open this file in a browser to generate PNG icons from the SVG logo.
+  Click "Generate & Download All Icons" to download icon16.png, icon48.png, icon128.png.
+  Place them in the /icons/ directory.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FTE Icon Generator</title>
+  <style>
+    body { font-family: monospace; background: #0c0c0c; color: #ebebeb; padding: 40px; }
+    button { background: #ccff00; color: #0c0c0c; border: none; padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; border-radius: 8px; margin-top: 20px; }
+    canvas { display: block; margin: 20px 0; border: 1px solid #333; }
+    .row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+    p { color: #888; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <h2 style="color:#ccff00">FTE Icon Generator</h2>
+  <p>Renders the logo at 16×16, 48×48, 128×128 and downloads each as a PNG.</p>
+  <button onclick="generateAll()">Generate &amp; Download All Icons</button>
+  <div id="previews" class="row"></div>
+
+  <script>
+    const SVG_SRC = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+      <rect width="128" height="128" rx="28" fill="#0c0c0c"/>
+      <rect width="128" height="128" rx="28" fill="url(#glow)" opacity="0.4"/>
+      <text x="64" y="82" text-anchor="middle"
+        font-family="Arial,sans-serif" font-size="56" font-weight="700"
+        fill="#ccff00" letter-spacing="-3">FT</text>
+      <rect x="32" y="98" width="64" height="3" rx="1.5" fill="#ccff00" opacity="0.6"/>
+      <defs>
+        <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#ccff00" stop-opacity="0.2"/>
+          <stop offset="100%" stop-color="#ccff00" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+    </svg>`;
+
+    function generateAll() {
+      const sizes = [16, 48, 128];
+      const container = document.getElementById('previews');
+      container.innerHTML = '';
+
+      sizes.forEach(size => {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        const img = new Image();
+        const blob = new Blob([SVG_SRC], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, size, size);
+          URL.revokeObjectURL(url);
+
+          // Preview
+          const wrap = document.createElement('div');
+          wrap.innerHTML = `<p>icon${size}.png (${size}×${size})</p>`;
+          wrap.appendChild(canvas);
+          container.appendChild(wrap);
+
+          // Download
+          canvas.toBlob(blob => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `icon${size}.png`;
+            a.click();
+          });
+        };
+        img.src = url;
+      });
+    }
+  </script>
+</body>
+</html>
