@@ -71,6 +71,28 @@ const institutionSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    settings: {
+      monitoringDefaults: {
+        tabSwitchLimit: { type: Number, default: 3 },
+        faceAbsenceFrames: { type: Number, default: 30 },
+        multipleFaceTolerance: { type: Number, default: 0 },
+        windowBlurSeconds: { type: Number, default: 10 },
+        requireWebcam: { type: Boolean, default: true },
+        screenshotOnViolation: { type: Boolean, default: false },
+      },
+      notifications: {
+        emailOnViolation: { type: Boolean, default: true },
+        emailOnSessionEnd: { type: Boolean, default: false },
+        inAppAlerts: { type: Boolean, default: true },
+        weeklyReport: { type: Boolean, default: true },
+        notifyEmail: { type: String, default: null },
+      },
+      retention: {
+        sessionDataDays: { type: Number, default: 90 },
+        violationFrames: { type: Number, default: 30 },
+        autoDelete: { type: Boolean, default: false },
+      },
+    },
   },
   {
     timestamps: true,

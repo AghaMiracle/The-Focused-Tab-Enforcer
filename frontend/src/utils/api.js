@@ -220,6 +220,18 @@ export const institutionApi = {
   /** Regenerate the extension API key. */
   regenerateApiKey: () =>
     api.post('/institution/regenerate-api-key'),
+
+  /** Get institution settings (monitoring defaults, notifications, retention). */
+  getSettings: () =>
+    api.get('/institution/settings'),
+
+  /** Update institution settings. */
+  updateSettings: (data) =>
+    api.put('/institution/settings', data),
+
+  /** Get hourly violation/session trend for a specific date (default: today). */
+  getTrend: (date) =>
+    api.get(`/institution/trend${date ? `?date=${date}` : ''}`),
 };
 
 // ─── Exams ────────────────────────────────────────────────────────────────────

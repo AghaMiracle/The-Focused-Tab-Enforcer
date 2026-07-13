@@ -1,5 +1,28 @@
 import { motion } from 'framer-motion';
-import { testimonials } from '../../data/mockData';
+
+const testimonials = [
+  {
+    id: 1,
+    quote: "Focused Tab Enforcer has completely transformed how we administer remote exams. The AI detection is scarily accurate.",
+    author: "Dr. Rebecca Asante",
+    role: "Head of Examinations, Tech University",
+    avatar: "RA",
+  },
+  {
+    id: 2,
+    quote: "The real-time dashboard gives us instant visibility across all sessions. We caught 3x more violations than our previous manual system.",
+    author: "Prof. Samuel Huang",
+    role: "IT Director, National College",
+    avatar: "SH",
+  },
+  {
+    id: 3,
+    quote: "Setup took less than an hour. Students install the extension, we get instant peace of mind. Incredible product.",
+    author: "Linda Okonkwo",
+    role: "Exam Coordinator, Eastbrook Institute",
+    avatar: "LO",
+  },
+];
 
 export default function Testimonials() {
   return (

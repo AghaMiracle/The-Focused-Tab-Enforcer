@@ -27,4 +27,8 @@ router.get('/stats', controller.getStats);
 
 router.post('/regenerate-api-key', controller.regenerateApiKey);
 
+router.get('/settings', controller.getSettings);
+router.put('/settings', controller.updateSettings);
+router.get('/trend', controller.getViolationTrend);
+
 module.exports = router;

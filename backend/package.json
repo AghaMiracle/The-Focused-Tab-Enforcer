@@ -9,6 +9,7 @@
     "lint": "eslint src/**/*.js"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "csvtojson": "^2.0.10",
@@ -18,16 +19,15 @@
     "express-validator": "^7.1.0",
     "helmet": "^7.1.0",
     "joi": "^17.13.1",
+    "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.13",
     "socket.io": "^4.7.5",
     "uuid": "^9.0.1",
-    "winston": "^3.13.0",
-    "json2csv": "^6.0.0-alpha.2"
+    "winston": "^3.13.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

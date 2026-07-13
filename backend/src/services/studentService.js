@@ -70,7 +70,7 @@ const bulkImportStudents = async ({ institutionId, filePath }) => {
 };
 
 /**
- * Get paginated list of students.
+ * Get paginated list of students with aggregated examsCompleted and violationCount.
  */
 const getStudents = async ({ institutionId, search, page = 1, limit = 20 }) => {
   const filter = { institutionId, isActive: true };
@@ -84,10 +84,30 @@ const getStudents = async ({ institutionId, search, page = 1, limit = 20 }) => {
   }
 
   const skip = (page - 1) * limit;
-  const [students, total] = await Promise.all([
+  const [rawStudents, total] = await Promise.all([
     Student.find(filter).sort({ fullName: 1 }).skip(skip).limit(limit),
     Student.countDocuments(filter),
   ]);
+
+  // For each student, compute examsCompleted and violationCount
+  const students = [];
+  for (const s of rawStudents) {
+    const completedCount = await ExamEnrollment.countDocuments({
+      studentId: s._id,
+      enrollmentStatus: { $in: ['completed', 'disqualified'] },
+    });
+
+    const enrollmentIds = await ExamEnrollment.distinct('_id', { studentId: s._id });
+    const violationCount = await ViolationEvent.countDocuments({
+      examEnrollmentId: { $in: enrollmentIds },
+    });
+
+    students.push({
+      ...s.toObject(),
+      examsCompleted: completedCount,
+      violationCount,
+    });
+  }
 
   return {
     students,

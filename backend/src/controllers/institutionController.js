@@ -33,4 +33,28 @@ const regenerateApiKey = asyncHandler(async (req, res) => {
   res.json({ status: 'success', data: { apiKey } });
 });
 
-module.exports = { getProfile, updateProfile, getStats, regenerateApiKey };
+/**
+ * GET /api/institution/settings
+ */
+const getSettings = asyncHandler(async (req, res) => {
+  const settings = await institutionService.getSettings(req.institutionId);
+  res.json({ status: 'success', data: { settings } });
+});
+
+/**
+ * PUT /api/institution/settings
+ */
+const updateSettings = asyncHandler(async (req, res) => {
+  const settings = await institutionService.updateSettings(req.institutionId, req.body);
+  res.json({ status: 'success', data: { settings } });
+});
+
+/**
+ * GET /api/institution/trend
+ */
+const getViolationTrend = asyncHandler(async (req, res) => {
+  const trend = await institutionService.getViolationTrend(req.institutionId, req.query.date);
+  res.json({ status: 'success', data: { trend } });
+});
+
+module.exports = { getProfile, updateProfile, getStats, regenerateApiKey, getSettings, updateSettings, getViolationTrend };

@@ -1,30 +1,165 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { LuFolderOpen, LuSearch, LuUserPlus } from 'react-icons/lu';
-import { mockStudents } from '../../data/mockData';
+import { motion, AnimatePresence } from 'framer-motion';
+import { LuFolderOpen, LuSearch, LuUserPlus, LuX, LuRefreshCw } from 'react-icons/lu';
 import { studentsApi } from '../../utils/api';
 
 const statusConfig = {
-  active: { color: '#ccff00', bg: 'rgba(204,255,0,0.1)', label: 'Active' },
-  flagged: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: 'Flagged' },
+  active:   { color: '#ccff00',            bg: 'rgba(204,255,0,0.1)',   label: 'Active' },
+  flagged:  { color: '#ef4444',            bg: 'rgba(239,68,68,0.1)',   label: 'Flagged' },
   inactive: { color: 'rgba(235,235,235,0.3)', bg: 'rgba(255,255,255,0.05)', label: 'Inactive' },
 };
 
+// ── Add Student Modal ──────────────────────────────────────────────────────────
+function AddStudentModal({ onClose, onCreated }) {
+  const [form, setForm] = useState({
+    fullName: '', email: '', registrationNumber: '', department: '', level: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const field = (label, id, type = 'text', placeholder = '') => (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="tech-label" style={{ color: 'rgba(235,235,235,0.5)' }}>
+        {label.toUpperCase()}
+      </label>
+      <input
+        id={id}
+        type={type}
+        value={form[id] || ''}
+        onChange={(e) => setForm({ ...form, [id]: e.target.value })}
+        placeholder={placeholder}
+        className="w-full px-4 py-3 rounded-2xl text-sm text-[#ebebeb] outline-none"
+        style={{
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          fontFamily: 'Space Grotesk, sans-serif',
+        }}
+        onFocus={(e) => { e.target.style.borderColor = 'rgba(204,255,0,0.5)'; }}
+        onBlur={(e)  => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+      />
+    </div>
+  );
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await studentsApi.create({
+        fullName:           form.fullName.trim(),
+        email:              form.email.trim(),
+        registrationNumber: form.registrationNumber.trim(),
+        department:         form.department.trim() || undefined,
+        level:              form.level.trim()      || undefined,
+      });
+      onCreated();
+    } catch (err) {
+      setError(err.message || 'Failed to add student.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add new student"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        transition={{ duration: 0.3 }}
+        className="w-full max-w-lg rounded-[2.5rem] p-8"
+        style={{
+          background: 'rgba(12,12,12,0.98)',
+          backdropFilter: 'blur(24px)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 40px 120px rgba(0,0,0,0.7)',
+        }}
+      >
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold text-[#ebebeb]" style={{ letterSpacing: '-0.03em' }}>
+              Add Student
+            </h2>
+            <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)' }}>STUDENT DETAILS</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 glass rounded-full flex items-center justify-center text-sm hover:text-red-400 transition-colors"
+            aria-label="Close modal"
+          >
+            <LuX size={14} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {field('Full Name', 'fullName', 'text', 'Jane Doe')}
+          {field('Email', 'email', 'email', 'jane@university.edu')}
+          {field('Registration Number', 'registrationNumber', 'text', 'REG2024001')}
+          <div className="grid grid-cols-2 gap-4">
+            {field('Department', 'department', 'text', 'Computer Science')}
+            {field('Level / Year', 'level', 'text', '300L')}
+          </div>
+
+          {error && (
+            <div className="px-4 py-3 rounded-2xl text-sm"
+              style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-2xl text-sm font-medium transition-all hover:bg-white/5"
+              style={{ color: 'rgba(235,235,235,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-3 rounded-2xl text-sm font-semibold text-black flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{ backgroundColor: '#ccff00' }}
+              aria-label="Save student"
+            >
+              {loading && <LuRefreshCw size={14} className="animate-spin" aria-hidden="true" />}
+              {loading ? 'Saving...' : 'Add Student'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [csvError, setCsvError] = useState('');
+  const [search, setSearch]         = useState('');
+  const [filter, setFilter]         = useState('all');
+  const [students, setStudents]     = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [csvError, setCsvError]     = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     try {
       const data = await studentsApi.list({ search: search || undefined });
-      // Backend returns { students: [...], pagination: {...} }
       setStudents(data?.students ?? []);
     } catch {
-      setStudents(mockStudents); // fallback
+      setStudents([]);
     } finally {
       setLoading(false);
     }
@@ -36,16 +171,16 @@ export default function StudentsPage() {
     return () => clearTimeout(timer);
   }, [fetchStudents]);
 
-  // Normalise backend student to what the card expects
+  // Normalise backend student → card shape
   const normalize = (s) => ({
-    id:              s._id,
-    name:            s.fullName,
-    email:           s.email,
-    regNumber:       s.registrationNumber,
-    examsCompleted:  s.examsCompleted ?? 0,
-    violationCount:  s.violationCount  ?? 0,
-    status:          s.isActive ? (s.violationCount > 3 ? 'flagged' : 'active') : 'inactive',
-    avatar:          s.fullName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '??',
+    id:             s._id,
+    name:           s.fullName,
+    email:          s.email,
+    regNumber:      s.registrationNumber,
+    examsCompleted: s.examsCompleted ?? 0,
+    violationCount: s.violationCount  ?? 0,
+    status:         s.isActive ? (s.violationCount > 3 ? 'flagged' : 'active') : 'inactive',
+    avatar:         s.fullName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '??',
   });
 
   const filtered = students
@@ -63,7 +198,6 @@ export default function StudentsPage() {
     } catch (err) {
       setCsvError(err.message || 'CSV import failed.');
     }
-    // Reset file input
     e.target.value = '';
   };
 
@@ -89,6 +223,7 @@ export default function StudentsPage() {
             <input type="file" accept=".csv" className="hidden" onChange={handleCsvImport} />
           </label>
           <button
+            onClick={() => setShowAddModal(true)}
             className="px-4 py-2 rounded-2xl text-sm font-semibold text-black flex items-center gap-1.5"
             style={{ backgroundColor: '#ccff00' }}
             aria-label="Add student manually"
@@ -99,7 +234,10 @@ export default function StudentsPage() {
       </div>
 
       {csvError && (
-        <div className="px-4 py-3 rounded-2xl text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }} role="alert">
+        <div className="px-4 py-3 rounded-2xl text-sm"
+          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}
+          role="alert"
+        >
           {csvError}
         </div>
       )}
@@ -107,10 +245,7 @@ export default function StudentsPage() {
       {/* Search + filter */}
       <div className="flex gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
-          <span
-            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-            aria-hidden="true"
-          >
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true">
             <LuSearch size={15} style={{ color: 'rgba(235,235,235,0.4)' }} />
           </span>
           <input
@@ -125,7 +260,7 @@ export default function StudentsPage() {
               fontFamily: 'Space Grotesk, sans-serif',
             }}
             onFocus={(e) => { e.target.style.borderColor = 'rgba(204,255,0,0.4)'; }}
-            onBlur={(e) => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+            onBlur={(e)  => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
             aria-label="Search students"
           />
         </div>
@@ -147,94 +282,106 @@ export default function StudentsPage() {
       </div>
 
       {/* Student cards grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filtered.map((student, i) => {
-          const st = statusConfig[student.status] || statusConfig.inactive;
-          return (
-            <motion.div
-              key={student.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-              whileHover={{ scale: 1.02, borderColor: 'rgba(204,255,0,0.25)' }}
-              className="rounded-[2rem] p-5 flex flex-col gap-4 cursor-pointer transition-all duration-200"
-              style={{
-                background: 'rgba(255,255,255,0.03)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255,255,255,0.08)',
-              }}
-              role="article"
-              aria-label={`${student.name} — ${student.status}`}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold flex-shrink-0"
-                  style={{
-                    background: 'rgba(204,255,0,0.1)',
-                    color: '#ccff00',
-                  }}
-                  aria-hidden="true"
-                >
-                  {student.avatar}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-[#ebebeb] truncate">{student.name}</div>
-                  <div className="text-xs truncate" style={{ color: 'rgba(235,235,235,0.5)' }}>
-                    {student.email}
+      {loading ? (
+        <div className="flex items-center justify-center py-16" style={{ color: 'rgba(235,235,235,0.4)' }}>
+          <LuRefreshCw size={20} className="animate-spin mr-2" aria-hidden="true" />
+          Loading students...
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filtered.map((student, i) => {
+            const st = statusConfig[student.status] || statusConfig.inactive;
+            return (
+              <motion.div
+                key={student.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06 }}
+                whileHover={{ scale: 1.02, borderColor: 'rgba(204,255,0,0.25)' }}
+                className="rounded-[2rem] p-5 flex flex-col gap-4 cursor-pointer transition-all duration-200"
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}
+                role="article"
+                aria-label={`${student.name} — ${student.status}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold shrink-0"
+                    style={{ background: 'rgba(204,255,0,0.1)', color: '#ccff00' }}
+                    aria-hidden="true"
+                  >
+                    {student.avatar}
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-[#ebebeb] truncate">{student.name}</div>
+                    <div className="text-xs truncate" style={{ color: 'rgba(235,235,235,0.5)' }}>
+                      {student.email}
+                    </div>
+                  </div>
+                  <span
+                    className="tech-label px-2 py-0.5 rounded-full shrink-0"
+                    style={{ color: st.color, background: st.bg, fontSize: 9 }}
+                  >
+                    {st.label}
+                  </span>
                 </div>
-                <span
-                  className="tech-label px-2 py-0.5 rounded-full flex-shrink-0"
-                  style={{ color: st.color, background: st.bg, fontSize: 9 }}
-                >
-                  {st.label}
-                </span>
-              </div>
 
-              <div className="flex items-center gap-3">
                 <div
-                  className="tech-label px-2 py-1 rounded-xl flex-1 text-center"
+                  className="tech-label px-2 py-1 rounded-xl text-center"
                   style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(235,235,235,0.4)', fontSize: 9 }}
                 >
                   REG: {student.regNumber}
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div
-                  className="rounded-xl p-2.5 text-center"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
-                >
-                  <div className="text-lg font-bold text-[#ebebeb]">{student.examsCompleted}</div>
-                  <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>EXAMS</div>
-                </div>
-                <div
-                  className="rounded-xl p-2.5 text-center"
-                  style={{
-                    background: student.violationCount > 3 ? 'rgba(239,68,68,0.05)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${student.violationCount > 3 ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)'}`,
-                  }}
-                >
+                <div className="grid grid-cols-2 gap-2">
                   <div
-                    className="text-lg font-bold"
-                    style={{ color: student.violationCount > 3 ? '#ef4444' : '#ebebeb' }}
+                    className="rounded-xl p-2.5 text-center"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                   >
-                    {student.violationCount}
+                    <div className="text-lg font-bold text-[#ebebeb]">{student.examsCompleted}</div>
+                    <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>EXAMS</div>
                   </div>
-                  <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>VIOLATIONS</div>
+                  <div
+                    className="rounded-xl p-2.5 text-center"
+                    style={{
+                      background: student.violationCount > 3 ? 'rgba(239,68,68,0.05)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${student.violationCount > 3 ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)'}`,
+                    }}
+                  >
+                    <div
+                      className="text-lg font-bold"
+                      style={{ color: student.violationCount > 3 ? '#ef4444' : '#ebebeb' }}
+                    >
+                      {student.violationCount}
+                    </div>
+                    <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>VIOLATIONS</div>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
-      {filtered.length === 0 && (
+      {!loading && filtered.length === 0 && (
         <div className="text-center py-16" style={{ color: 'rgba(235,235,235,0.3)' }}>
           <LuSearch size={40} className="mx-auto mb-3 opacity-30" aria-hidden="true" />
           <div className="text-sm">No students match your search.</div>
         </div>
       )}
+
+      {/* Add student modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <AddStudentModal
+            onClose={() => setShowAddModal(false)}
+            onCreated={() => { setShowAddModal(false); fetchStudents(); }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

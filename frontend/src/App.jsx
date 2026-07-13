@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 
 // Landing
 import Navbar from './components/landing/Navbar';
@@ -101,7 +102,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <SocketProvider>
+          <AppRoutes />
+        </SocketProvider>
       </AuthProvider>
     </BrowserRouter>
   );

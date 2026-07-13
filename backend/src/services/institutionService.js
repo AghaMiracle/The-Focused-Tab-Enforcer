@@ -115,4 +115,110 @@ const regenerateApiKey = async (institutionId) => {
   return newKey;
 };
 
-module.exports = { getProfile, updateProfile, getDashboardStats, regenerateApiKey };
+/**
+ * Get institution-level settings (monitoring defaults, notifications, retention).
+ */
+const getSettings = async (institutionId) => {
+  const institution = await Institution.findById(institutionId).select('settings');
+  if (!institution) throw new AppError('Institution not found.', 404);
+  return institution.settings || {};
+};
+
+/**
+ * Update institution-level settings.
+ * Only the fields within `settings` are updated (partial merge).
+ */
+const updateSettings = async (institutionId, patch) => {
+  // Use $set with dot-notation so only provided fields are overwritten
+  const updateOps = {};
+  const allowedSections = ['monitoringDefaults', 'notifications', 'retention'];
+  for (const section of allowedSections) {
+    if (patch[section] && typeof patch[section] === 'object') {
+      for (const [key, value] of Object.entries(patch[section])) {
+        updateOps[`settings.${section}.${key}`] = value;
+      }
+    }
+  }
+
+  if (Object.keys(updateOps).length === 0) {
+    throw new AppError('No valid settings fields provided.', 400);
+  }
+
+  const institution = await Institution.findByIdAndUpdate(
+    institutionId,
+    { $set: updateOps },
+    { new: true, runValidators: true }
+  ).select('settings');
+
+  if (!institution) throw new AppError('Institution not found.', 404);
+  return institution.settings;
+};
+
+/**
+ * Get hourly violation/session trend for today (or a specific date).
+ * Returns an array of 24 hourly buckets for the requested day.
+ */
+const getViolationTrend = async (institutionId, dateStr) => {
+  const date = dateStr ? new Date(dateStr) : new Date();
+  date.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  // Get all exam enrollment IDs for this institution (for session matching)
+  const allExams = await Exam.find({ institutionId }).select('_id');
+  const allExamIds = allExams.map((e) => e._id);
+  const allEnrollmentIds = await ExamEnrollment.distinct('_id', { examId: { $in: allExamIds } });
+
+  // Aggregate violations by hour
+  const violationsByHour = await ViolationEvent.aggregate([
+    {
+      $match: {
+        examEnrollmentId: { $in: allEnrollmentIds },
+        timestamp: { $gte: date, $lt: dayEnd },
+      },
+    },
+    {
+      $group: {
+        _id: { $hour: '$timestamp' },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Aggregate active sessions by hour (approximate: sessions started that hour)
+  const sessionsByHour = await MonitoringSession.aggregate([
+    {
+      $match: {
+        examEnrollmentId: { $in: allEnrollmentIds },
+        startedAt: { $gte: date, $lt: dayEnd },
+      },
+    },
+    {
+      $group: {
+        _id: { $hour: '$startedAt' },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const violationMap = {};
+  violationsByHour.forEach((v) => { violationMap[v._id] = v.count; });
+
+  const sessionMap = {};
+  sessionsByHour.forEach((s) => { sessionMap[s._id] = s.count; });
+
+  // Build 24-slot array
+  const trend = [];
+  for (let h = 0; h < 24; h++) {
+    const hh = h.toString().padStart(2, '0');
+    trend.push({
+      time: `${hh}:00`,
+      violations: violationMap[h] || 0,
+      sessions: sessionMap[h] || 0,
+    });
+  }
+
+  return trend;
+};
+
+module.exports = { getProfile, updateProfile, getDashboardStats, regenerateApiKey, getSettings, updateSettings, getViolationTrend };
