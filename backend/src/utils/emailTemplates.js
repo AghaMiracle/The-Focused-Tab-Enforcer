@@ -497,6 +497,43 @@ const highSeverityAlertEmail = ({
   });
 };
 
+// ─── 6. Student Credentials Email ─────────────────────────────────────────────
+const studentCredentialsEmail = ({ studentName, studentEmail, registrationNumber, institutionName }) =>
+  baseLayout({
+    badgeText: 'ACCOUNT',
+    preheader: `Your exam credentials for ${institutionName} are ready.`,
+    content: `
+      <h1 class="email-title">Your Exam<br /><span style="color:#ccff00">Account is Ready</span></h1>
+      <p class="email-subtitle">
+        Hello <strong style="color:#ebebeb">${studentName}</strong> — your institution
+        <strong style="color:#ebebeb">${institutionName}</strong> has registered you for exam monitoring.
+      </p>
+
+      <div class="info-card">
+        <p style="font-size:12px;color:rgba(235,235,235,0.4);margin-bottom:12px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;">Your Login Credentials</p>
+        ${infoRow('Email', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${studentEmail}</span>`)}
+        ${infoRow('Registration #', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${registrationNumber}</span>`)}
+      </div>
+
+      <div class="info-card" style="background:rgba(204,255,0,0.04);border-color:rgba(204,255,0,0.15);">
+        <p style="font-size:12px;color:rgba(235,235,235,0.4);margin-bottom:12px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;">How to Take an Exam</p>
+        <ul class="steps-list">
+          ${stepItem(1, 'Install the <strong style="color:#ebebeb">Focused Tab Enforcer</strong> Chrome extension')}
+          ${stepItem(2, 'Open the extension popup and enter your <strong style="color:#ebebeb">Exam ID</strong>, <strong style="color:#ebebeb">Email</strong>, and <strong style="color:#ebebeb">Registration Number</strong>')}
+          ${stepItem(3, 'Click "Verify & Start Monitoring" — your session begins')}
+          ${stepItem(4, 'Stay on the exam tab. Do not switch tabs or leave the window')}
+          ${stepItem(5, 'When finished, click "End Exam" in the extension popup')}
+        </ul>
+      </div>
+
+      <div class="divider"></div>
+      <p style="font-size:12px;color:rgba(235,235,235,0.4);">
+        Keep these credentials safe — you'll need them for every exam.
+        If you have issues, contact your institution administrator.
+      </p>
+    `,
+  });
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
   welcomeEmail,
@@ -504,4 +541,5 @@ module.exports = {
   examReminderEmail,
   dailySummaryEmail,
   highSeverityAlertEmail,
+  studentCredentialsEmail,
 };

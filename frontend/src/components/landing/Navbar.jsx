@@ -13,7 +13,7 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const links = ['Home', 'Features', 'How It Works', 'Pricing', 'Contact'];
+  const links = ['Home', 'Features', 'How It Works', /* 'Pricing', */ 'Contact'];
 
   const scrollTo = (id) => {
     const el = document.getElementById(id.toLowerCase().replace(/\s+/g, '-'));

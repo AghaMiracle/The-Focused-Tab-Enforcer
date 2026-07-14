@@ -114,6 +114,15 @@ const sendHighSeverityAlertEmail = ({ adminEmail, adminName, studentName, examTi
   });
 };
 
+const sendStudentCredentialsEmail = ({ studentEmail, studentName, registrationNumber, institutionName }) => {
+  const { studentCredentialsEmail } = require('./emailTemplates');
+  return sendEmail({
+    to:      studentEmail,
+    subject: `Your Exam Account — ${institutionName}`,
+    html:    studentCredentialsEmail({ studentName, studentEmail, registrationNumber, institutionName }),
+  });
+};
+
 module.exports = {
   sendEmail,
   sendWelcomeEmail,
@@ -121,4 +130,5 @@ module.exports = {
   sendExamReminderEmail,
   sendDailySummaryEmail,
   sendHighSeverityAlertEmail,
+  sendStudentCredentialsEmail,
 };

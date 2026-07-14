@@ -308,6 +308,12 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 function handleTabSwitch(newTabId) {
   const graceMs = session?.examConfig?.tabSwitchGraceMs ?? DEFAULT_THRESHOLDS.tabSwitchGraceMs;
 
+  if (graceMs <= 0) {
+    // Instant violation — no grace period allowed
+    recordViolation(VIOLATION_TYPES.TAB_SWITCH, SEVERITY.HIGH, { tabId: newTabId });
+    return;
+  }
+
   clearTimeout(violationTimers.tabSwitch);
   violationTimers.tabSwitch = setTimeout(async () => {
     // Verify they haven't come back
@@ -321,6 +327,12 @@ function handleTabSwitch(newTabId) {
 
 function handleWindowBlur() {
   const graceMs = session?.examConfig?.windowBlurGraceMs ?? DEFAULT_THRESHOLDS.windowBlurGraceMs;
+
+  if (graceMs <= 0) {
+    // Instant violation — no grace period allowed
+    recordViolation(VIOLATION_TYPES.WINDOW_BLUR, SEVERITY.HIGH);
+    return;
+  }
 
   clearTimeout(violationTimers.windowBlur);
   violationTimers.windowBlur = setTimeout(() => {

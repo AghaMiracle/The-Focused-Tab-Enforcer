@@ -7,7 +7,7 @@
  */
 
 import { MSG, EXT_STATE } from './utils/constants.js';
-import { getSettings, getSession } from './utils/storage.js';
+import { getSession } from './utils/storage.js';
 import { verifyStudent } from './utils/api.js';
 import { formatTime } from './utils/helpers.js';
 
@@ -63,12 +63,6 @@ function showView(name) {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
-  // Check for API key
-  const settings = await getSettings();
-  if (!settings.institutionKey) {
-    noKeyWarning.classList.remove('hidden');
-  }
-
   // Get current session state from background
   chrome.runtime.sendMessage({ type: MSG.GET_STATUS }, (resp) => {
     if (chrome.runtime.lastError) {
@@ -79,8 +73,8 @@ async function init() {
     if (resp?.session) {
       renderActiveView(resp.session);
     } else {
-      // No active session — show idle or verify based on current tab
-      checkCurrentTab(settings);
+      // No active session — show verify form
+      showView('verify');
     }
   });
 }
@@ -98,21 +92,7 @@ async function checkStorageSession() {
       isOffline: false,
     });
   } else {
-    showView('idle');
-  }
-}
-
-async function checkCurrentTab(settings) {
-  // If we have an API key and we're on a page, show verify form
-  if (settings.institutionKey) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
-      showView('verify');
-    } else {
-      showView('idle');
-    }
-  } else {
-    showView('idle');
+    showView('verify');
   }
 }
 

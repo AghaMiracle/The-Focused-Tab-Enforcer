@@ -1,24 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LuBell, LuChevronDown, LuLogOut, LuUser, LuCreditCard, LuBookOpen } from 'react-icons/lu';
+import { LuBell, LuChevronDown, LuLogOut, LuUser, LuBookOpen } from 'react-icons/lu';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useSocket } from '../../context/SocketContext';
 
 export default function TopBar({ title }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { socket, connected } = useSocket();
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [activeSessions, setActiveSessions] = useState(0);
 
-  const notifications = [
-    { id: 1, text: 'Violation threshold exceeded — Marcus Chen', time: '2m ago', type: 'high' },
-    { id: 2, text: 'New exam session started — Physics Lab', time: '8m ago', type: 'info' },
-    { id: 3, text: 'Session completed — CS Midterm (62 students)', time: '1h ago', type: 'success' },
-  ];
+  // Listen for real-time alerts via Socket.io
+  useEffect(() => {
+    if (!socket) return;
+
+    const onViolation = (data) => {
+      setNotifications((prev) => {
+        const item = {
+          id: data.alertId || Date.now(),
+          text: data.message || `${data.violationType} — ${data.studentName}`,
+          time: 'Just now',
+          type: data.severity === 'high' ? 'high' : 'info',
+        };
+        return [item, ...prev].slice(0, 10);
+      });
+    };
+
+    const onHeartbeat = (data) => {
+      if (data?.activeSessions != null) setActiveSessions(data.activeSessions);
+    };
+
+    socket.on('server:violation-alert', onViolation);
+    socket.on('server:heartbeat', onHeartbeat);
+
+    return () => {
+      socket.off('server:violation-alert', onViolation);
+      socket.off('server:heartbeat', onHeartbeat);
+    };
+  }, [socket]);
 
   const profileItems = [
     { label: 'Profile Settings', Icon: LuUser },
-    { label: 'Billing',          Icon: LuCreditCard },
     { label: 'Help & Docs',      Icon: LuBookOpen },
   ];
 
@@ -41,8 +67,10 @@ export default function TopBar({ title }) {
       <div className="flex items-center gap-3">
         {/* System status */}
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full glass">
-          <span className="w-2 h-2 rounded-full animate-pulse-lime" style={{ backgroundColor: '#ccff00' }} />
-          <span className="tech-label" style={{ color: 'rgba(235,235,235,0.6)' }}>23 ACTIVE</span>
+          <span className="w-2 h-2 rounded-full animate-pulse-lime" style={{ backgroundColor: connected ? '#ccff00' : 'rgba(235,235,235,0.3)' }} />
+          <span className="tech-label" style={{ color: 'rgba(235,235,235,0.6)' }}>
+            {activeSessions > 0 ? `${activeSessions} ACTIVE` : connected ? 'ONLINE' : 'OFFLINE'}
+          </span>
         </div>
 
         {/* Notifications */}
@@ -55,13 +83,15 @@ export default function TopBar({ title }) {
             aria-haspopup="true"
           >
             <LuBell size={17} style={{ color: 'rgba(235,235,235,0.7)' }} aria-hidden="true" />
-            <span
-              className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-black flex items-center justify-center"
-              style={{ backgroundColor: '#ccff00', fontSize: 9, fontWeight: 700 }}
-              aria-label="3 unread notifications"
-            >
-              3
-            </span>
+            {notifications.length > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-black flex items-center justify-center"
+                style={{ backgroundColor: '#ccff00', fontSize: 9, fontWeight: 700 }}
+                aria-label={`${notifications.length} unread notifications`}
+              >
+                {notifications.length}
+              </span>
+            )}
           </button>
 
           <AnimatePresence>
@@ -84,27 +114,33 @@ export default function TopBar({ title }) {
                 <div className="tech-label mb-3 px-2" style={{ color: 'rgba(235,235,235,0.4)' }}>
                   RECENT ALERTS
                 </div>
-                {notifications.map((n) => (
-                  <div
-                    key={n.id}
-                    className="flex items-start gap-3 px-2 py-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
-                    role="menuitem"
-                  >
+                {notifications.length === 0 ? (
+                  <div className="text-center py-6 text-xs" style={{ color: 'rgba(235,235,235,0.3)' }}>
+                    No alerts yet — violations will<br />appear here in real time.
+                  </div>
+                ) : (
+                  notifications.map((n) => (
                     <div
-                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                      style={{
-                        backgroundColor:
-                          n.type === 'high' ? '#ef4444' : n.type === 'success' ? '#ccff00' : '#60a5fa',
-                      }}
-                    />
-                    <div>
-                      <div className="text-xs text-[#ebebeb]">{n.text}</div>
-                      <div className="tech-label mt-0.5" style={{ color: 'rgba(235,235,235,0.35)', fontSize: 9 }}>
-                        {n.time}
+                      key={n.id}
+                      className="flex items-start gap-3 px-2 py-2.5 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
+                      role="menuitem"
+                    >
+                      <div
+                        className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                        style={{
+                          backgroundColor:
+                            n.type === 'high' ? '#ef4444' : n.type === 'success' ? '#ccff00' : '#60a5fa',
+                        }}
+                      />
+                      <div>
+                        <div className="text-xs text-[#ebebeb]">{n.text}</div>
+                        <div className="tech-label mt-0.5" style={{ color: 'rgba(235,235,235,0.35)', fontSize: 9 }}>
+                          {n.time}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </motion.div>
             )}
           </AnimatePresence>

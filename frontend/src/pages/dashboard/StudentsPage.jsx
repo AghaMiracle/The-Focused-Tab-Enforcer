@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LuFolderOpen, LuSearch, LuUserPlus, LuX, LuRefreshCw } from 'react-icons/lu';
+import { LuFolderOpen, LuSearch, LuUserPlus, LuX, LuRefreshCw, LuTrash2 } from 'react-icons/lu';
 import { studentsApi } from '../../utils/api';
 
 const statusConfig = {
@@ -201,6 +201,16 @@ export default function StudentsPage() {
     e.target.value = '';
   };
 
+  const handleDeleteStudent = async (id, name) => {
+    if (!confirm(`Remove "${name}" from the student directory? This action deactivates the student.`)) return;
+    try {
+      await studentsApi.delete(id);
+      fetchStudents();
+    } catch (err) {
+      alert(err.message || 'Failed to remove student.');
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -360,6 +370,16 @@ export default function StudentsPage() {
                     <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>VIOLATIONS</div>
                   </div>
                 </div>
+
+                {/* Delete button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteStudent(student.id, student.name); }}
+                  className="w-full py-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all hover:bg-red-500/10"
+                  style={{ color: 'rgba(235,235,235,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}
+                  aria-label={`Delete ${student.name}`}
+                >
+                  <LuTrash2 size={12} /> Remove Student
+                </button>
               </motion.div>
             );
           })}

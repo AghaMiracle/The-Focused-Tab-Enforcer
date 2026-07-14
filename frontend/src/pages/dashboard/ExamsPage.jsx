@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LuRefreshCw, LuX, LuPlay, LuSquare, LuPencil, LuEye } from 'react-icons/lu';
+import { LuRefreshCw, LuX, LuPlay, LuSquare, LuPencil, LuEye, LuTrash2 } from 'react-icons/lu';
 import { examsApi, studentsApi } from '../../utils/api';
 
 const statusConfig = {
@@ -514,6 +514,16 @@ export default function ExamsPage() {
 
   useEffect(() => { fetchExams(); }, [fetchExams]);
 
+  const handleDeleteExam = async (exam) => {
+    if (!confirm(`Delete "${exam.title}"? This action cannot be undone for active exams.`)) return;
+    try {
+      await examsApi.delete(exam._id);
+      fetchExams();
+    } catch (err) {
+      alert(err.message || 'Failed to delete exam.');
+    }
+  };
+
   const normalizeExam = (e) => ({
     ...e,
     id:       e.examId || e._id,
@@ -624,6 +634,13 @@ export default function ExamsPage() {
                     className="tech-label px-2 py-1 rounded-lg transition-colors hover:bg-white/10"
                     style={{ color: 'rgba(96,165,250,0.9)', fontSize: 9 }} aria-label={`Enroll students in ${exam.title}`}>
                     +ENROLL
+                  </button>
+                )}
+                {exam.status !== 'active' && (
+                  <button onClick={() => handleDeleteExam(exam)}
+                    className="tech-label px-2 py-1 rounded-lg transition-colors hover:bg-red-500/10 flex items-center gap-1"
+                    style={{ color: '#f87171', fontSize: 9 }} aria-label={`Delete ${exam.title}`}>
+                    <LuTrash2 size={10} />DEL
                   </button>
                 )}
               </div>

@@ -25,8 +25,8 @@ export const SEVERITY = {
 
 // ─── Default Thresholds ─────────────────────────────────────────────────────
 export const DEFAULT_THRESHOLDS = {
-  tabSwitchGraceMs:      2000,   // ms before tab switch is a violation
-  windowBlurGraceMs:     3000,   // ms before window blur is a violation
+  tabSwitchGraceMs:      0,      // instant violation — no grace period
+  windowBlurGraceMs:     0,      // instant violation — no grace period
   faceAbsenceFrames:     3,      // consecutive frames without face
   faceAbsenceMs:         1500,   // ms equivalent of 3 frames @ 500ms
   multipleFaceTolerance: 1,      // faces > this triggers violation
@@ -78,10 +78,10 @@ export const MSG = {
 
 // ─── API Endpoints ───────────────────────────────────────────────────────────
 export const API_ENDPOINTS = {
-  VERIFY:     '/api/ext/verify',
+  VERIFY:     '/api/sessions/verify',
   CONFIG:     '/api/ext/config',
-  HEARTBEAT:  '/api/ext/heartbeat',
-  LOG:        '/api/ext/log',
+  HEARTBEAT:  '/api/sessions/heartbeat',
+  LOG:        '/api/sessions/violation',
 };
 
 // ─── Extension States ────────────────────────────────────────────────────────

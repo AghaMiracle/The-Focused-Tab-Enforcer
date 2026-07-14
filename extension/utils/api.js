@@ -5,15 +5,16 @@
  * automatic retry, offline detection, and queue management.
  */
 
-import { API_ENDPOINTS, DEFAULT_SERVER_URL } from './constants.js';
+import { DEFAULT_SERVER_URL } from './constants.js';
 import { getSettings } from './storage.js';
 import { retryWithBackoff } from './helpers.js';
 
 // ─── Core Fetch Wrapper ──────────────────────────────────────────────────────
 
 /**
- * Make an authenticated request to the backend.
- * @param {string} endpoint - API path (e.g. '/api/ext/verify')
+ * Make a request to the backend.
+ * No API key required — students authenticate via exam credentials.
+ * @param {string} endpoint - API path (e.g. '/api/sessions/verify')
  * @param {object} body - JSON body
  * @param {object} [options] - Override options
  * @returns {Promise<object>} Parsed JSON response
@@ -21,21 +22,17 @@ import { retryWithBackoff } from './helpers.js';
 export async function apiRequest(endpoint, body, options = {}) {
   const settings = await getSettings();
   const serverUrl = options.serverUrl || settings.serverUrl || DEFAULT_SERVER_URL;
-  const institutionKey = options.institutionKey || settings.institutionKey;
-
-  if (!institutionKey) {
-    throw new Error('Extension API key not configured. Please open Settings.');
-  }
 
   const url = `${serverUrl}${endpoint}`;
 
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-extension-key': institutionKey,
-      ...options.headers,
-    },
+    headers,
     body: JSON.stringify(body),
     signal: options.signal,
   });
@@ -57,7 +54,7 @@ export async function apiRequest(endpoint, body, options = {}) {
 
 /**
  * Verify student credentials and retrieve session token.
- * POST /api/ext/verify
+ * POST /api/sessions/verify
  *
  * @param {object} credentials
  * @param {string} credentials.examId
@@ -73,20 +70,21 @@ export async function apiRequest(endpoint, body, options = {}) {
  * }>}
  */
 export async function verifyStudent(credentials) {
-  const result = await apiRequest(API_ENDPOINTS.VERIFY, credentials);
+  const result = await apiRequest('/api/sessions/verify', credentials);
   return result.data;
 }
 
 /**
  * Send a heartbeat to keep the session alive.
- * POST /api/ext/heartbeat
+ * POST /api/sessions/:id/heartbeat
  *
  * @param {object} payload
  * @returns {Promise<object>}
  */
 export async function sendHeartbeat(payload) {
+  const { sessionId, ...body } = payload;
   return retryWithBackoff(
-    () => apiRequest(API_ENDPOINTS.HEARTBEAT, payload),
+    () => apiRequest(`/api/sessions/${sessionId}/heartbeat`, body),
     2,
     1000
   );
@@ -94,13 +92,14 @@ export async function sendHeartbeat(payload) {
 
 /**
  * Log a violation event to the backend.
- * POST /api/ext/log
+ * POST /api/sessions/:id/violation
  *
  * @param {object} violation
  * @returns {Promise<object>}
  */
 export async function logViolation(violation) {
-  return apiRequest(API_ENDPOINTS.LOG, violation);
+  const { sessionId, ...body } = violation;
+  return apiRequest(`/api/sessions/${sessionId}/violation`, body);
 }
 
 /**
@@ -129,30 +128,18 @@ export async function flushOfflineQueue(queue) {
 }
 
 /**
- * Test connection to the backend with the given API key.
+ * Test connection to the backend server.
  * @param {string} serverUrl
- * @param {string} institutionKey
  * @returns {Promise<{ok: boolean, message: string}>}
  */
-export async function testConnection(serverUrl, institutionKey) {
+export async function testConnection(serverUrl) {
   try {
-    // We use a minimal verify call that will fail on credentials but
-    // confirm the server and key are reachable
-    await apiRequest(
-      API_ENDPOINTS.VERIFY,
-      { examId: '__ping__', email: 'ping@ping.com', registrationNumber: 'PING' },
-      { serverUrl, institutionKey }
-    );
-    return { ok: true, message: 'Connection successful.' };
+    const response = await fetch(`${serverUrl}/health`);
+    if (response.ok) {
+      return { ok: true, message: 'Server is reachable.' };
+    }
+    return { ok: false, message: `Server responded with ${response.status}.` };
   } catch (err) {
-    // 404 (exam not found) means the server and key are valid — good enough
-    if (err.status === 404 || err.status === 403) {
-      return { ok: true, message: 'Connection successful. API key is valid.' };
-    }
-    // 401 means bad API key
-    if (err.status === 401) {
-      return { ok: false, message: 'Invalid API key. Please check your settings.' };
-    }
     return { ok: false, message: `Connection failed: ${err.message}` };
   }
 }

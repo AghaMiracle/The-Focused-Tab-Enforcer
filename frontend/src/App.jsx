@@ -8,8 +8,8 @@ import Navbar from './components/landing/Navbar';
 import HeroSection from './components/landing/HeroSection';
 import BentoFeatures from './components/landing/BentoFeatures';
 import HowItWorks from './components/landing/HowItWorks';
-import Pricing from './components/landing/Pricing';
-import Testimonials from './components/landing/Testimonials';
+// import Pricing from './components/landing/Pricing';
+// import Testimonials from './components/landing/Testimonials';
 import Footer from './components/landing/Footer';
 
 // Auth
@@ -42,8 +42,8 @@ function LandingPage() {
           <HeroSection />
           <BentoFeatures />
           <HowItWorks />
-          <Testimonials />
-          <Pricing />
+          {/* <Testimonials /> */}
+          {/* <Pricing /> */}
           <Footer />
         </main>
       </div>

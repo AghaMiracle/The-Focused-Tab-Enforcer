@@ -5,13 +5,45 @@ const Student = require('../models/Student');
 const ExamEnrollment = require('../models/ExamEnrollment');
 const MonitoringSession = require('../models/MonitoringSession');
 const ViolationEvent = require('../models/ViolationEvent');
+const Institution = require('../models/Institution');
 const AppError = require('../utils/AppError');
+const { sendStudentCredentialsEmail } = require('../utils/emailService');
 
 /**
- * Add a single student.
+ * Add a single student and send credentials email.
+ * If a deactivated student with the same email exists, reactivate them.
  */
 const addStudent = async ({ institutionId, data }) => {
-  const student = await Student.create({ ...data, institutionId });
+  // Check for existing deactivated student with same email
+  const existing = await Student.findOne({
+    institutionId,
+    email: data.email.toLowerCase(),
+    isActive: false,
+  });
+
+  let student;
+  if (existing) {
+    // Reactivate and update their details
+    existing.isActive = true;
+    existing.fullName = data.fullName || existing.fullName;
+    existing.registrationNumber = data.registrationNumber || existing.registrationNumber;
+    existing.department = data.department || existing.department;
+    existing.level = data.level || existing.level;
+    await existing.save();
+    student = existing;
+  } else {
+    student = await Student.create({ ...data, institutionId });
+  }
+
+  // Send credentials email (fire-and-forget)
+  const institution = await Institution.findById(institutionId).select('name');
+  sendStudentCredentialsEmail({
+    studentEmail: student.email,
+    studentName: student.fullName,
+    registrationNumber: student.registrationNumber,
+    institutionName: institution?.name || 'Your Institution',
+  }).catch(() => {});
+
   return student;
 };
 
@@ -34,6 +66,9 @@ const bulkImportStudents = async ({ institutionId, filePath }) => {
 
   if (!rows.length) throw new AppError('CSV file is empty.', 400);
 
+  const institution = await Institution.findById(institutionId).select('name');
+  const institutionName = institution?.name || 'Your Institution';
+
   const results = { created: 0, skipped: 0, errors: [] };
 
   for (const [i, row] of rows.entries()) {
@@ -46,15 +81,41 @@ const bulkImportStudents = async ({ institutionId, filePath }) => {
     }
 
     try {
-      await Student.create({
+      // Check for existing deactivated student
+      const existing = await Student.findOne({
         institutionId,
-        fullName: fullName.trim(),
         email: email.trim().toLowerCase(),
-        registrationNumber: registrationNumber.trim().toUpperCase(),
-        department: department ? department.trim() : undefined,
-        level: level ? level.trim() : undefined,
+        isActive: false,
       });
+
+      let student;
+      if (existing) {
+        existing.isActive = true;
+        existing.fullName = fullName.trim();
+        existing.registrationNumber = registrationNumber.trim().toUpperCase();
+        existing.department = department ? department.trim() : existing.department;
+        existing.level = level ? level.trim() : existing.level;
+        await existing.save();
+        student = existing;
+      } else {
+        student = await Student.create({
+          institutionId,
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          registrationNumber: registrationNumber.trim().toUpperCase(),
+          department: department ? department.trim() : undefined,
+          level: level ? level.trim() : undefined,
+        });
+      }
       results.created++;
+
+      // Send credentials email (fire-and-forget)
+      sendStudentCredentialsEmail({
+        studentEmail: student.email,
+        studentName: student.fullName,
+        registrationNumber: student.registrationNumber,
+        institutionName,
+      }).catch(() => {});
     } catch (err) {
       if (err.code === 11000) {
         results.skipped++;

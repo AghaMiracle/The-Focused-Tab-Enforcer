@@ -23,6 +23,7 @@ const registerInstitution = asyncHandler(async (req, res) => {
     data: {
       institution: result.institution,
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       apiKey: result.apiKey,
     },
   });
@@ -43,6 +44,7 @@ const loginInstitution = asyncHandler(async (req, res) => {
     data: {
       institution: result.institution,
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
     },
   });
 });
@@ -79,6 +81,7 @@ const refreshToken = asyncHandler(async (req, res) => {
     status: 'success',
     data: {
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       userType: result.userType,
     },
   });
