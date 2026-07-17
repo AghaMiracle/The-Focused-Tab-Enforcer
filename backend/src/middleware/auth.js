@@ -94,24 +94,15 @@ const restrictTo = (...roles) => (req, res, next) => {
 };
 
 /**
- * Validate the x-extension-key header for extension API endpoints.
- * The key must match an institution's stored API key.
+ * Resolve institution context from the exam ID in the request body.
+ * Used for extension routes where the exam ID is the link to the institution.
+ * No API key required — the exam ID implicitly identifies the institution.
  */
-const extensionApiKey = asyncHandler(async (req, res, next) => {
-  const extensionKey = req.headers['x-extension-key'];
-
-  if (!extensionKey) {
-    return next(new AppError('Missing x-extension-key header.', 401));
-  }
-
-  const institution = await Institution.findOne({ apiKey: extensionKey }).select('+apiKey');
-  if (!institution || !institution.isActive) {
-    return next(new AppError('Invalid or revoked extension API key.', 401));
-  }
-
-  req.institution = institution;
-  req.institutionId = institution._id;
+const resolveInstitutionFromExam = asyncHandler(async (req, res, next) => {
+  // For verify — examId is in body
+  // For heartbeat/log — sessionToken contains examId (decoded in controller)
+  // Let the request through; controllers handle institution resolution.
   next();
 });
 
-module.exports = { protect, institutionOnly, adminOnly, restrictTo, extensionApiKey };
+module.exports = { protect, institutionOnly, adminOnly, restrictTo, resolveInstitutionFromExam };

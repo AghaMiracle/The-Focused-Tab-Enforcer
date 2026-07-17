@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const Institution = require('../models/Institution');
 const Admin = require('../models/Admin');
 const AppError = require('../utils/AppError');
-const { generateResetToken, hashToken, generateApiKey } = require('../utils/tokenUtils');
+const { generateResetToken, hashToken } = require('../utils/tokenUtils');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../utils/emailService');
 const logger = require('../utils/logger');
 
@@ -14,7 +14,6 @@ const registerInstitution = async ({ name, email, password, address, contactPhon
   const existing = await Institution.findOne({ email });
   if (existing) throw new AppError('An institution with this email already exists.', 409);
 
-  const apiKey = generateApiKey();
   const institution = await Institution.create({
     name,
     email,
@@ -22,7 +21,6 @@ const registerInstitution = async ({ name, email, password, address, contactPhon
     address,
     contactPhone,
     website,
-    apiKey,
   });
 
   // Fire-and-forget welcome email
@@ -35,7 +33,7 @@ const registerInstitution = async ({ name, email, password, address, contactPhon
   institution.refreshTokens = [hashToken(refreshToken)];
   await institution.save({ validateBeforeSave: false });
 
-  return { institution, accessToken, refreshToken, apiKey };
+  return { institution, accessToken, refreshToken };
 };
 
 /**

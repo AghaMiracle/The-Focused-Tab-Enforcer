@@ -5,7 +5,6 @@ const MonitoringSession = require('../models/MonitoringSession');
 const ViolationEvent = require('../models/ViolationEvent');
 const Student = require('../models/Student');
 const AppError = require('../utils/AppError');
-const { generateApiKey } = require('../utils/tokenUtils');
 
 /**
  * Get institution profile.
@@ -53,7 +52,7 @@ const getDashboardStats = async (institutionId) => {
   ] = await Promise.all([
     Exam.countDocuments({ institutionId }),
     Exam.countDocuments({ institutionId, status: 'active' }),
-    Student.countDocuments({ institutionId, isActive: true }),
+    Student.countDocuments({ institutionId }),
     Exam.countDocuments({ institutionId, status: 'scheduled' }),
     Exam.countDocuments({ institutionId, status: 'completed' }),
   ]);
@@ -104,15 +103,6 @@ const getDashboardStats = async (institutionId) => {
       byType: violationsByType,
     },
   };
-};
-
-/**
- * Regenerate institution API key.
- */
-const regenerateApiKey = async (institutionId) => {
-  const newKey = generateApiKey();
-  await Institution.findByIdAndUpdate(institutionId, { apiKey: newKey });
-  return newKey;
 };
 
 /**
@@ -221,4 +211,4 @@ const getViolationTrend = async (institutionId, dateStr) => {
   return trend;
 };
 
-module.exports = { getProfile, updateProfile, getDashboardStats, regenerateApiKey, getSettings, updateSettings, getViolationTrend };
+module.exports = { getProfile, updateProfile, getDashboardStats, getSettings, updateSettings, getViolationTrend };

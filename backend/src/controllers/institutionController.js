@@ -26,14 +26,6 @@ const getStats = asyncHandler(async (req, res) => {
 });
 
 /**
- * POST /api/institution/regenerate-api-key
- */
-const regenerateApiKey = asyncHandler(async (req, res) => {
-  const apiKey = await institutionService.regenerateApiKey(req.institutionId);
-  res.json({ status: 'success', data: { apiKey } });
-});
-
-/**
  * GET /api/institution/settings
  */
 const getSettings = asyncHandler(async (req, res) => {
@@ -57,4 +49,4 @@ const getViolationTrend = asyncHandler(async (req, res) => {
   res.json({ status: 'success', data: { trend } });
 });
 
-module.exports = { getProfile, updateProfile, getStats, regenerateApiKey, getSettings, updateSettings, getViolationTrend };
+module.exports = { getProfile, updateProfile, getStats, getSettings, updateSettings, getViolationTrend };

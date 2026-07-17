@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authApi, tokens, persistedUser } from '../utils/api';
+import { authApi, tokens, persistedUser, institutionApi } from '../utils/api';
 
 const AuthContext = createContext(null);
 
@@ -13,6 +13,33 @@ export function AuthProvider({ children }) {
     if (user) persistedUser.set(user);
     else persistedUser.clear();
   }, [user]);
+
+  // ── Validate token on app load ──────────────────────────────────────────────
+  // If there's a persisted user but the token is expired and can't be refreshed,
+  // auto-logout so the user isn't stuck on a broken dashboard.
+  useEffect(() => {
+    if (!user) return;
+    const accessToken = tokens.getAccess();
+    if (!accessToken && !tokens.getRefresh()) {
+      // No tokens at all — clear stale user
+      tokens.clear();
+      setUser(null);
+      return;
+    }
+
+    // Try a lightweight API call to validate the session.
+    // The api.js layer auto-refreshes on 401 — if that also fails,
+    // it redirects to /login. But we catch it here to clear state cleanly.
+    let cancelled = false;
+    institutionApi.getProfile()
+      .catch((err) => {
+        if (!cancelled && (err.status === 401 || err.message?.includes('expired'))) {
+          tokens.clear();
+          setUser(null);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []); // only on mount
 
   /**
    * Institution login.
@@ -76,7 +103,6 @@ export function AuthProvider({ children }) {
         name:  data.institution.name,
         email: data.institution.email,
         type:  'institution',
-        apiKey: data.apiKey,
         subscriptionTier: data.institution.subscriptionTier,
         // Store extra signup info locally (not in DB)
         institutionType,

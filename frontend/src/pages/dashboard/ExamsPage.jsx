@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LuRefreshCw, LuX, LuPlay, LuSquare, LuPencil, LuEye, LuTrash2 } from 'react-icons/lu';
 import { examsApi, studentsApi } from '../../utils/api';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
 
 const statusConfig = {
   active:    { label: 'Active',    color: '#ccff00',  bg: 'rgba(204,255,0,0.1)' },
@@ -498,6 +500,9 @@ export default function ExamsPage() {
   const [loading, setLoading]                 = useState(true);
   const [error, setError]                     = useState('');
 
+  const toast = useToast();
+  const confirm = useConfirm();
+
   const fetchExams = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -515,12 +520,18 @@ export default function ExamsPage() {
   useEffect(() => { fetchExams(); }, [fetchExams]);
 
   const handleDeleteExam = async (exam) => {
-    if (!confirm(`Delete "${exam.title}"? This action cannot be undone for active exams.`)) return;
+    const ok = await confirm({
+      title: 'Delete exam?',
+      message: `Delete "${exam.title}"? This action cannot be undone for active exams.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await examsApi.delete(exam._id);
       fetchExams();
     } catch (err) {
-      alert(err.message || 'Failed to delete exam.');
+      toast.error(err.message || 'Failed to delete exam.');
     }
   };
 

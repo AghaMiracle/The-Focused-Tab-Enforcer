@@ -6,6 +6,7 @@ import {
   LuX, LuCircleCheck, LuFolder, LuRefreshCw,
 } from 'react-icons/lu';
 import { examsApi, reportsApi } from '../../utils/api';
+import { useToast } from '../../components/ui/Toast';
 
 const severityConfig = {
   high:   { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)' },
@@ -69,7 +70,7 @@ function ExamSummaryModal({ exam, onClose }) {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err.message || 'Export failed.');
+      toast.error(err.message || 'Export failed.');
     } finally {
       setExporting(false);
     }
@@ -275,6 +276,8 @@ export default function ReportsPage() {
   const [loading, setLoading]             = useState(true);
   const [search, setSearch]               = useState('');
   const [filterStatus, setFilterStatus]   = useState('all');
+
+  const toast = useToast();
 
   const fetchExams = useCallback(async () => {
     setLoading(true);

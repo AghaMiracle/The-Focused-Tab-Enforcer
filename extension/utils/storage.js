@@ -93,14 +93,12 @@ export async function clearSession() {
  */
 export async function getSettings() {
   const result = await storageGet([
-    STORAGE_KEYS.INSTITUTION_KEY,
     STORAGE_KEYS.SERVER_URL,
     STORAGE_KEYS.DEBUG_MODE,
     STORAGE_KEYS.NOTIFICATIONS,
   ]);
 
   return {
-    institutionKey: result[STORAGE_KEYS.INSTITUTION_KEY] || '',
     serverUrl: result[STORAGE_KEYS.SERVER_URL] || DEFAULT_SERVER_URL,
     debugMode: result[STORAGE_KEYS.DEBUG_MODE] || false,
     notifications: result[STORAGE_KEYS.NOTIFICATIONS] !== false, // default true
@@ -113,8 +111,6 @@ export async function getSettings() {
  */
 export async function saveSettings(settings) {
   const items = {};
-  if (settings.institutionKey !== undefined)
-    items[STORAGE_KEYS.INSTITUTION_KEY] = settings.institutionKey;
   if (settings.serverUrl !== undefined)
     items[STORAGE_KEYS.SERVER_URL] = settings.serverUrl;
   if (settings.debugMode !== undefined)

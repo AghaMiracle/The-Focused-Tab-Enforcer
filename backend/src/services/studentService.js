@@ -1,47 +1,73 @@
+const crypto = require('crypto');
 const csv = require('csvtojson');
-const path = require('path');
 const fs = require('fs');
 const Student = require('../models/Student');
 const ExamEnrollment = require('../models/ExamEnrollment');
 const MonitoringSession = require('../models/MonitoringSession');
 const ViolationEvent = require('../models/ViolationEvent');
+const RealtimeAlert = require('../models/RealtimeAlert');
 const Institution = require('../models/Institution');
 const AppError = require('../utils/AppError');
 const { sendStudentCredentialsEmail } = require('../utils/emailService');
 
 /**
+ * Generate an institution prefix from its name (up to 4 chars).
+ * e.g. "University of Lagos" → "UNIL", "MIT" → "MIT"
+ */
+const getInstitutionPrefix = (name) => {
+  if (!name) return 'INST';
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) {
+    return words[0].substring(0, 4).toUpperCase();
+  }
+  // Take first letter of each word, up to 4
+  return words.map((w) => w[0]).join('').substring(0, 4).toUpperCase();
+};
+
+/**
+ * Generate a unique exam ID: PREFIX + alphanumeric chars (total 10 chars).
+ */
+const generateExamId = async (institutionName) => {
+  const prefix = getInstitutionPrefix(institutionName);
+  const remainingLength = 10 - prefix.length;
+
+  // Keep trying until we get a unique one
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const randomPart = crypto
+      .randomBytes(remainingLength)
+      .toString('base64url')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .substring(0, remainingLength)
+      .toUpperCase();
+    const examId = `${prefix}${randomPart}`;
+    const exists = await Student.findOne({ examId });
+    if (!exists) return examId;
+  }
+  // Fallback: include timestamp component
+  const ts = Date.now().toString(36).toUpperCase().slice(-remainingLength);
+  return `${prefix}${ts}`.substring(0, 10);
+};
+
+/**
  * Add a single student and send credentials email.
- * If a deactivated student with the same email exists, reactivate them.
+ * Generates a unique exam ID prefixed with the institution short name.
  */
 const addStudent = async ({ institutionId, data }) => {
-  // Check for existing deactivated student with same email
-  const existing = await Student.findOne({
-    institutionId,
-    email: data.email.toLowerCase(),
-    isActive: false,
-  });
+  const institution = await Institution.findById(institutionId).select('name');
+  const institutionName = institution?.name || 'Your Institution';
 
-  let student;
-  if (existing) {
-    // Reactivate and update their details
-    existing.isActive = true;
-    existing.fullName = data.fullName || existing.fullName;
-    existing.registrationNumber = data.registrationNumber || existing.registrationNumber;
-    existing.department = data.department || existing.department;
-    existing.level = data.level || existing.level;
-    await existing.save();
-    student = existing;
-  } else {
-    student = await Student.create({ ...data, institutionId });
-  }
+  // Generate unique exam ID for this student
+  const examId = await generateExamId(institutionName);
+
+  const student = await Student.create({ ...data, institutionId, examId });
 
   // Send credentials email (fire-and-forget)
-  const institution = await Institution.findById(institutionId).select('name');
   sendStudentCredentialsEmail({
     studentEmail: student.email,
     studentName: student.fullName,
     registrationNumber: student.registrationNumber,
-    institutionName: institution?.name || 'Your Institution',
+    examId: student.examId,
+    institutionName,
   }).catch(() => {});
 
   return student;
@@ -81,32 +107,16 @@ const bulkImportStudents = async ({ institutionId, filePath }) => {
     }
 
     try {
-      // Check for existing deactivated student
-      const existing = await Student.findOne({
+      const examId = await generateExamId(institutionName);
+      const student = await Student.create({
         institutionId,
+        fullName: fullName.trim(),
         email: email.trim().toLowerCase(),
-        isActive: false,
+        registrationNumber: registrationNumber.trim().toUpperCase(),
+        department: department ? department.trim() : undefined,
+        level: level ? level.trim() : undefined,
+        examId,
       });
-
-      let student;
-      if (existing) {
-        existing.isActive = true;
-        existing.fullName = fullName.trim();
-        existing.registrationNumber = registrationNumber.trim().toUpperCase();
-        existing.department = department ? department.trim() : existing.department;
-        existing.level = level ? level.trim() : existing.level;
-        await existing.save();
-        student = existing;
-      } else {
-        student = await Student.create({
-          institutionId,
-          fullName: fullName.trim(),
-          email: email.trim().toLowerCase(),
-          registrationNumber: registrationNumber.trim().toUpperCase(),
-          department: department ? department.trim() : undefined,
-          level: level ? level.trim() : undefined,
-        });
-      }
       results.created++;
 
       // Send credentials email (fire-and-forget)
@@ -114,6 +124,7 @@ const bulkImportStudents = async ({ institutionId, filePath }) => {
         studentEmail: student.email,
         studentName: student.fullName,
         registrationNumber: student.registrationNumber,
+        examId: student.examId,
         institutionName,
       }).catch(() => {});
     } catch (err) {
@@ -134,7 +145,7 @@ const bulkImportStudents = async ({ institutionId, filePath }) => {
  * Get paginated list of students with aggregated examsCompleted and violationCount.
  */
 const getStudents = async ({ institutionId, search, page = 1, limit = 20 }) => {
-  const filter = { institutionId, isActive: true };
+  const filter = { institutionId };
 
   if (search) {
     filter.$or = [
@@ -207,14 +218,39 @@ const updateStudent = async ({ studentId, institutionId, data }) => {
 };
 
 /**
- * Soft-delete a student (deactivate).
+ * Hard-delete a student and all related data (enrollments, sessions, violations, alerts).
  */
 const deleteStudent = async ({ studentId, institutionId }) => {
   const student = await Student.findOne({ _id: studentId, institutionId });
   if (!student) throw new AppError('Student not found.', 404);
 
-  student.isActive = false;
-  await student.save();
+  // Find all enrollments for this student
+  const enrollmentIds = await ExamEnrollment.distinct('_id', { studentId: student._id });
+
+  // Find all monitoring sessions for these enrollments
+  const sessionIds = await MonitoringSession.distinct('_id', {
+    examEnrollmentId: { $in: enrollmentIds },
+  });
+
+  // Delete violation events tied to these sessions/enrollments
+  await ViolationEvent.deleteMany({
+    $or: [
+      { monitoringSessionId: { $in: sessionIds } },
+      { examEnrollmentId: { $in: enrollmentIds } },
+    ],
+  });
+
+  // Delete monitoring sessions
+  await MonitoringSession.deleteMany({ examEnrollmentId: { $in: enrollmentIds } });
+
+  // Delete realtime alerts tied to these enrollments
+  await RealtimeAlert.deleteMany({ enrollmentId: { $in: enrollmentIds } });
+
+  // Delete exam enrollments
+  await ExamEnrollment.deleteMany({ studentId: student._id });
+
+  // Delete the student document itself
+  await Student.deleteOne({ _id: student._id });
 };
 
 module.exports = {

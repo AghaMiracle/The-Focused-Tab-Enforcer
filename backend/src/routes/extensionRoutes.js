@@ -2,7 +2,6 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const controller = require('../controllers/extensionController');
-const { extensionApiKey } = require('../middleware/auth');
 
 const extLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
@@ -12,9 +11,9 @@ const extLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// All extension routes require a valid x-extension-key header
+// Extension routes are open (no API key required).
+// The Exam ID in the request body links to the institution.
 router.use(extLimiter);
-router.use(extensionApiKey);
 
 router.post('/verify', controller.verify);
 router.post('/config', controller.getConfig);

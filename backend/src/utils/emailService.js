@@ -114,12 +114,21 @@ const sendHighSeverityAlertEmail = ({ adminEmail, adminName, studentName, examTi
   });
 };
 
-const sendStudentCredentialsEmail = ({ studentEmail, studentName, registrationNumber, institutionName }) => {
+const sendStudentCredentialsEmail = ({ studentEmail, studentName, registrationNumber, examId, institutionName }) => {
   const { studentCredentialsEmail } = require('./emailTemplates');
   return sendEmail({
     to:      studentEmail,
     subject: `Your Exam Account — ${institutionName}`,
-    html:    studentCredentialsEmail({ studentName, studentEmail, registrationNumber, institutionName }),
+    html:    studentCredentialsEmail({ studentName, studentEmail, registrationNumber, examId, institutionName }),
+  });
+};
+
+const sendExamEnrollmentEmail = ({ studentEmail, studentName, registrationNumber, examId, examTitle, scheduledDate, durationMinutes }) => {
+  const { examEnrollmentEmail } = require('./emailTemplates');
+  return sendEmail({
+    to:      studentEmail,
+    subject: `You've been enrolled: ${examTitle} (${examId})`,
+    html:    examEnrollmentEmail({ studentName, studentEmail, registrationNumber, examId, examTitle, scheduledDate, durationMinutes }),
   });
 };
 
@@ -131,4 +140,5 @@ module.exports = {
   sendDailySummaryEmail,
   sendHighSeverityAlertEmail,
   sendStudentCredentialsEmail,
+  sendExamEnrollmentEmail,
 };

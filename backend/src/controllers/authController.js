@@ -24,7 +24,6 @@ const registerInstitution = asyncHandler(async (req, res) => {
       institution: result.institution,
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
-      apiKey: result.apiKey,
     },
   });
 });

@@ -18,7 +18,7 @@ const examValidation = [
   body('violationThresholds').optional().isObject(),
   body('violationThresholds.tabSwitchSeconds').optional().isInt({ min: 1 }),
   body('violationThresholds.faceAbsenceFrames').optional().isInt({ min: 1 }),
-  body('violationThresholds.multipleFaceTolerance').optional().isInt({ min: 1 }),
+  body('violationThresholds.multipleFaceTolerance').optional().isInt({ min: 0 }),
   body('violationThresholds.attentionAwaySeconds').optional().isInt({ min: 1 }),
 ];
 

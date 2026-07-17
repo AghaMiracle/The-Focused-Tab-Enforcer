@@ -21,7 +21,6 @@ const views = {
 const settingsBtn    = document.getElementById('settingsBtn');
 const footerSettings = document.getElementById('footerSettings');
 const goToSettings   = document.getElementById('goToSettings');
-const noKeyWarning   = document.getElementById('noKeyWarning');
 
 // Verify form
 const verifyForm     = document.getElementById('verifyForm');

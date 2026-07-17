@@ -47,30 +47,6 @@
 
         <div class="settings-card">
           <div class="field-group">
-            <label class="field-label" for="institutionKey">
-              Institution API Key
-              <span class="field-badge">Required</span>
-            </label>
-            <div class="input-wrap">
-              <input
-                class="field-input"
-                type="password"
-                id="institutionKey"
-                placeholder="••••••••••••••••••••••••••••"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <button class="input-toggle" id="toggleKey" aria-label="Toggle visibility">
-                <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              </button>
-            </div>
-            <p class="field-hint">Provided by your institution administrator. Found in the institution portal under API Settings.</p>
-          </div>
-
-          <div class="field-group">
             <label class="field-label" for="serverUrl">Server URL</label>
             <input
               class="field-input"
@@ -80,6 +56,11 @@
               autocomplete="off"
             />
             <p class="field-hint">The backend server URL. Default: <code>http://localhost:5000</code></p>
+          </div>
+
+          <div class="info-note" style="background:rgba(204,255,0,0.04);border:1px solid rgba(204,255,0,0.15);border-radius:12px;padding:14px 18px;font-size:12px;color:rgba(235,235,235,0.55);line-height:1.6;">
+            <strong style="color:#ccff00;">No API key required.</strong><br/>
+            Students connect by entering their Exam ID in the extension popup. The Exam ID links them to your institution automatically.
           </div>
 
           <div class="connection-test" id="connectionResult" aria-live="polite"></div>

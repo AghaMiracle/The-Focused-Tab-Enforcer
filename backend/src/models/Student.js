@@ -37,6 +37,13 @@ const studentSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    examId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      uppercase: true,
+    },
     faceDescriptor: {
       type: [Number],
       default: null,

@@ -317,7 +317,7 @@ const welcomeEmail = ({ institutionName }) =>
           ${stepItem(1, 'Log in to your <strong style="color:#ebebeb">dashboard</strong>')}
           ${stepItem(2, 'Add your students via CSV or manual entry')}
           ${stepItem(3, 'Create and schedule your first exam')}
-          ${stepItem(4, 'Distribute the <strong style="color:#ebebeb">browser extension</strong> to students')}
+          ${stepItem(4, 'Share the <strong style="color:#ebebeb">Exam ID</strong> with students — they use it in the extension to join')}
           ${stepItem(5, 'Go live — monitor in real time')}
         </ul>
       </div>
@@ -325,8 +325,8 @@ const welcomeEmail = ({ institutionName }) =>
       <div class="divider"></div>
 
       <p style="font-size:13px;color:rgba(235,235,235,0.5);">
-        Questions? Reach out to our support team anytime.
-        We're here to help you get set up quickly.
+        No API keys needed. Students simply enter the Exam ID in the
+        browser extension to connect to your institution automatically.
       </p>
     `,
   });
@@ -498,7 +498,7 @@ const highSeverityAlertEmail = ({
 };
 
 // ─── 6. Student Credentials Email ─────────────────────────────────────────────
-const studentCredentialsEmail = ({ studentName, studentEmail, registrationNumber, institutionName }) =>
+const studentCredentialsEmail = ({ studentName, studentEmail, registrationNumber, examId, institutionName }) =>
   baseLayout({
     badgeText: 'ACCOUNT',
     preheader: `Your exam credentials for ${institutionName} are ready.`,
@@ -513,6 +513,7 @@ const studentCredentialsEmail = ({ studentName, studentEmail, registrationNumber
         <p style="font-size:12px;color:rgba(235,235,235,0.4);margin-bottom:12px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;">Your Login Credentials</p>
         ${infoRow('Email', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${studentEmail}</span>`)}
         ${infoRow('Registration #', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${registrationNumber}</span>`)}
+        ${infoRow('Exam ID', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${examId}</span>`)}
       </div>
 
       <div class="info-card" style="background:rgba(204,255,0,0.04);border-color:rgba(204,255,0,0.15);">
@@ -534,6 +535,57 @@ const studentCredentialsEmail = ({ studentName, studentEmail, registrationNumber
     `,
   });
 
+// ─── 7. Exam Enrollment Email ─────────────────────────────────────────────────
+const examEnrollmentEmail = ({ studentName, studentEmail, registrationNumber, examId, examTitle, scheduledDate, durationMinutes }) => {
+  const dateStr = scheduledDate
+    ? new Date(scheduledDate).toLocaleString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long',
+        day: 'numeric', hour: '2-digit', minute: '2-digit',
+      })
+    : 'To be announced';
+
+  return baseLayout({
+    badgeText: 'ENROLLED',
+    preheader: `You've been enrolled in ${examTitle}. Exam ID: ${examId}`,
+    content: `
+      <h1 class="email-title">You're Enrolled<br /><span style="color:#ccff00">in an Exam</span></h1>
+      <p class="email-subtitle">
+        Hello <strong style="color:#ebebeb">${studentName}</strong> — you've been enrolled in
+        <strong style="color:#ebebeb">${examTitle}</strong>. Details below.
+      </p>
+
+      <div class="info-card">
+        <p style="font-size:12px;color:rgba(235,235,235,0.4);margin-bottom:12px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;">Exam Details</p>
+        ${infoRow('Exam', `<strong style="color:#ccff00">${examTitle}</strong>`)}
+        ${infoRow('Exam ID', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px">${examId}</span>`)}
+        ${infoRow('Date &amp; Time', dateStr)}
+        ${infoRow('Duration', `${durationMinutes} minutes`)}
+      </div>
+
+      <div class="info-card">
+        <p style="font-size:12px;color:rgba(235,235,235,0.4);margin-bottom:12px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;">Your Login Credentials</p>
+        ${infoRow('Email', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${studentEmail}</span>`)}
+        ${infoRow('Registration #', `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#ccff00">${registrationNumber}</span>`)}
+      </div>
+
+      <div class="info-card" style="background:rgba(204,255,0,0.04);border-color:rgba(204,255,0,0.15);">
+        <p style="font-size:12px;color:rgba(235,235,235,0.4);margin-bottom:12px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;">How to Join</p>
+        <ul class="steps-list">
+          ${stepItem(1, 'Install the <strong style="color:#ebebeb">Focused Tab Enforcer</strong> Chrome extension')}
+          ${stepItem(2, 'Open the extension and enter your <strong style="color:#ebebeb">Exam ID</strong>, <strong style="color:#ebebeb">Email</strong>, and <strong style="color:#ebebeb">Registration Number</strong>')}
+          ${stepItem(3, 'Click "Verify & Start Monitoring" — your session begins')}
+          ${stepItem(4, 'Stay on the exam tab. Do not switch tabs or leave the window')}
+        </ul>
+      </div>
+
+      <div class="divider"></div>
+      <p style="font-size:12px;color:rgba(235,235,235,0.4);">
+        Keep this Exam ID safe. If you have issues, contact your institution administrator.
+      </p>
+    `,
+  });
+};
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
   welcomeEmail,
@@ -542,4 +594,5 @@ module.exports = {
   dailySummaryEmail,
   highSeverityAlertEmail,
   studentCredentialsEmail,
+  examEnrollmentEmail,
 };

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LuFolderOpen, LuSearch, LuUserPlus, LuX, LuRefreshCw, LuTrash2 } from 'react-icons/lu';
 import { studentsApi } from '../../utils/api';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
 
 const statusConfig = {
   active:   { color: '#ccff00',            bg: 'rgba(204,255,0,0.1)',   label: 'Active' },
@@ -153,6 +155,9 @@ export default function StudentsPage() {
   const [csvError, setCsvError]     = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
+  const toast = useToast();
+  const confirm = useConfirm();
+
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     try {
@@ -177,6 +182,7 @@ export default function StudentsPage() {
     name:           s.fullName,
     email:          s.email,
     regNumber:      s.registrationNumber,
+    examId:         s.examId || '—',
     examsCompleted: s.examsCompleted ?? 0,
     violationCount: s.violationCount  ?? 0,
     status:         s.isActive ? (s.violationCount > 3 ? 'flagged' : 'active') : 'inactive',
@@ -193,7 +199,7 @@ export default function StudentsPage() {
     setCsvError('');
     try {
       const result = await studentsApi.bulkImport(file);
-      alert(`Import complete: ${result.created ?? 0} created, ${result.skipped ?? 0} skipped.`);
+      toast.success(`Import complete: ${result.created ?? 0} created, ${result.skipped ?? 0} skipped.`);
       fetchStudents();
     } catch (err) {
       setCsvError(err.message || 'CSV import failed.');
@@ -202,12 +208,18 @@ export default function StudentsPage() {
   };
 
   const handleDeleteStudent = async (id, name) => {
-    if (!confirm(`Remove "${name}" from the student directory? This action deactivates the student.`)) return;
+    const ok = await confirm({
+      title: 'Delete student permanently?',
+      message: `Permanently delete "${name}" and all their exam data? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await studentsApi.delete(id);
       fetchStudents();
     } catch (err) {
-      alert(err.message || 'Failed to remove student.');
+      toast.error(err.message || 'Failed to remove student.');
     }
   };
 
@@ -344,6 +356,13 @@ export default function StudentsPage() {
                   style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(235,235,235,0.4)', fontSize: 9 }}
                 >
                   REG: {student.regNumber}
+                </div>
+
+                <div
+                  className="tech-label px-2 py-1 rounded-xl text-center"
+                  style={{ background: 'rgba(204,255,0,0.06)', color: '#ccff00', fontSize: 9, border: '1px solid rgba(204,255,0,0.15)' }}
+                >
+                  EXAM ID: {student.examId}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">

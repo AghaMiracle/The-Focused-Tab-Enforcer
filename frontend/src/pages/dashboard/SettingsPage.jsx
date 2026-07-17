@@ -108,12 +108,6 @@ export default function SettingsPage() {
   const [retSaved, setRetSaved]       = useState(false);
   const [retError, setRetError]       = useState('');
 
-  // ── API Key ──────────────────────────────────────────────────────────────────
-  const [apiKey, setApiKey]           = useState('');
-  const [apiKeyCopied, setApiKeyCopied] = useState(false);
-  const [keyLoading, setKeyLoading]   = useState(false);
-  const [keyError, setKeyError]       = useState('');
-
   // ── Load profile + settings on mount ─────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -208,26 +202,6 @@ export default function SettingsPage() {
       setRetError(err.message || 'Failed to save retention policy.');
     } finally {
       setRetLoading(false);
-    }
-  };
-
-  const copyApiKey = () => {
-    if (!apiKey) return;
-    navigator.clipboard.writeText(apiKey).catch(() => {});
-    setApiKeyCopied(true);
-    setTimeout(() => setApiKeyCopied(false), 2000);
-  };
-
-  const rotateApiKey = async () => {
-    setKeyLoading(true);
-    setKeyError('');
-    try {
-      const data = await institutionApi.regenerateApiKey();
-      setApiKey(data.apiKey || '');
-    } catch (err) {
-      setKeyError(err.message || 'Failed to rotate key.');
-    } finally {
-      setKeyLoading(false);
     }
   };
 
@@ -364,51 +338,6 @@ export default function SettingsPage() {
         </div>
       </SettingsSection>
 
-      {/* ── API Keys ── */}
-      <SettingsSection title="API KEYS — EXTENSION COMMUNICATION" delay={0.2}>
-        <FieldRow label="Live API Key" hint="Used by the browser extension to authenticate session events">
-          <div className="flex gap-2">
-            <div className="flex-1 px-4 py-2.5 rounded-2xl text-sm font-mono overflow-hidden"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(235,235,235,0.6)', fontSize: 12, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
-              aria-label="API key value">
-              {apiKey || '— Click "Rotate Key" to generate —'}
-            </div>
-            <button onClick={copyApiKey} disabled={!apiKey}
-              className="px-4 py-2.5 rounded-2xl text-sm font-medium transition-all shrink-0 disabled:opacity-40"
-              style={{
-                background: apiKeyCopied ? 'rgba(204,255,0,0.15)' : 'rgba(255,255,255,0.05)',
-                border: `1px solid ${apiKeyCopied ? 'rgba(204,255,0,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                color: apiKeyCopied ? '#ccff00' : 'rgba(235,235,235,0.7)',
-              }}
-              aria-label="Copy API key">
-              {apiKeyCopied ? '✓ Copied' : '⊕ Copy'}
-            </button>
-          </div>
-        </FieldRow>
-
-        <div className="flex items-start gap-3 px-4 py-3 rounded-2xl"
-          style={{ background: 'rgba(204,255,0,0.04)', border: '1px solid rgba(204,255,0,0.12)' }} role="note">
-          <LuInfo size={16} style={{ color: '#ccff00', shrink: 0, marginTop: 1 }} aria-hidden="true" />
-          <p className="text-xs leading-relaxed" style={{ color: 'rgba(235,235,235,0.55)' }}>
-            Keep this key confidential. It grants the extension permission to submit session events.
-            Rotate immediately if compromised. New keys take effect within 60 seconds.
-          </p>
-        </div>
-
-        {keyError && (
-          <div className="px-4 py-2 rounded-2xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }} role="alert">{keyError}</div>
-        )}
-
-        <div className="flex justify-end pt-2">
-          <button onClick={rotateApiKey} disabled={keyLoading}
-            className="px-6 py-2.5 rounded-2xl text-sm font-medium transition-all hover:bg-red-500/10 flex items-center gap-2 disabled:opacity-60"
-            style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
-            aria-label="Rotate API key">
-            <LuRefreshCw size={14} className={keyLoading ? 'animate-spin' : ''} aria-hidden="true" />
-            {keyLoading ? 'Rotating...' : 'Rotate Key'}
-          </button>
-        </div>
-      </SettingsSection>
     </div>
   );
 }

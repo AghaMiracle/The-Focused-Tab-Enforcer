@@ -35,7 +35,7 @@ const autoStartExams = cron.schedule(
         logger.info(`[CRON] Auto-started exam: ${exam.examId} — ${exam.title}`);
 
         if (io) {
-          io.to(`institution:${exam.institutionId}`).emit('server:exam-started', {
+          io.of('/admin-dashboard').to(`institution:${exam.institutionId}`).emit('server:exam-started', {
             examId: exam._id,
             examCode: exam.examId,
             title: exam.title,
@@ -91,7 +91,7 @@ const autoEndExams = cron.schedule(
           logger.info(`[CRON] Auto-ended exam: ${exam.examId} — ${exam.title}`);
 
           if (io) {
-            io.to(`institution:${exam.institutionId}`).emit('server:exam-ended', {
+            io.of('/admin-dashboard').to(`institution:${exam.institutionId}`).emit('server:exam-ended', {
               examId: exam._id,
               examCode: exam.examId,
               title: exam.title,

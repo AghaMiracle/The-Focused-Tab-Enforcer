@@ -20,38 +20,39 @@ const setSocketIo = (io) => { _io = io; };
 /**
  * Verify student identity before starting an exam session.
  * Called by the browser extension.
+ * Uses the student's permanent examId (e.g. UOLXA7B2K9) to identify them.
+ * The exam must be active OR scheduled for the student to join.
  */
 const verifyStudent = async ({ examId, email, registrationNumber }) => {
-  // 1. Find the exam (by examId string or ObjectId)
-  const exam = await Exam.findOne({
-    $or: [{ examId }, { _id: examId.length === 24 ? examId : null }],
-    status: 'active',
-  });
-
-  if (!exam) {
-    throw new AppError('Exam not found or is not currently active.', 404);
-  }
-
-  // 2. Find the student
+  // 1. Find the student by their permanent exam ID
   const student = await Student.findOne({
-    institutionId: exam.institutionId,
-    email: email.toLowerCase(),
-    registrationNumber: registrationNumber.toUpperCase(),
-    isActive: true,
+    examId: examId.toUpperCase(),
   });
 
   if (!student) {
-    throw new AppError('Student not found. Check your email and registration number.', 403);
+    throw new AppError('Student not found. Check your Exam ID.', 404);
   }
 
-  // 3. Check enrollment
+  // 2. Find the student's enrollment in an active or scheduled exam
   const enrollment = await ExamEnrollment.findOne({
-    examId: exam._id,
     studentId: student._id,
-  });
+    enrollmentStatus: { $in: ['enrolled', 'in_progress'] },
+  }).populate('examId');
 
-  if (!enrollment) {
-    throw new AppError('You are not enrolled in this exam.', 403);
+  if (!enrollment || !enrollment.examId) {
+    throw new AppError('You are not enrolled in any upcoming exam.', 403);
+  }
+
+  const exam = enrollment.examId;
+
+  // Allow active or scheduled exams
+  if (!['active', 'scheduled'].includes(exam.status)) {
+    throw new AppError(`Exam "${exam.title}" is not currently available (status: ${exam.status}).`, 403);
+  }
+
+  // 3. Verify email and registration number match
+  if (student.email !== email.toLowerCase() || student.registrationNumber !== registrationNumber.toUpperCase()) {
+    throw new AppError('Email or registration number does not match.', 403);
   }
 
   if (enrollment.enrollmentStatus === 'disqualified') {
@@ -96,14 +97,41 @@ const verifyStudent = async ({ examId, email, registrationNumber }) => {
   // 6. Update verification status
   enrollment.verificationStatus = 'verified';
   enrollment.verificationDetails = {
-    faceMatched: false, // Face matching is optional/separate
+    faceMatched: false,
     confidenceScore: 0,
     verifiedAt: new Date(),
   };
   await enrollment.save();
 
+  // 7. Auto-create monitoring session (so extension can start sending heartbeats/violations immediately)
+  const newSession = await MonitoringSession.create({
+    examEnrollmentId: enrollment._id,
+    sessionToken,
+    startedAt: new Date(),
+    status: 'active',
+    lastHeartbeatAt: new Date(),
+  });
+
+  // Mark enrollment as in_progress
+  enrollment.enrollmentStatus = 'in_progress';
+  enrollment.startedAt = new Date();
+  await enrollment.save();
+
+  // Emit socket event so admins see the session appear live
+  if (_io) {
+    _io.of('/admin-dashboard').to(`institution:${exam.institutionId}`).emit('server:session-started', {
+      sessionId: newSession._id,
+      enrollmentId: enrollment._id,
+      studentName: student.fullName,
+      examTitle: exam.title,
+      examId: exam.examId,
+      timestamp: new Date(),
+    });
+  }
+
   return {
     sessionToken,
+    sessionId: newSession._id,
     enrollmentId: enrollment._id,
     isResuming: false,
     examDetails: {
@@ -155,7 +183,7 @@ const startSession = async ({ sessionToken }) => {
   if (_io) {
     const exam = await Exam.findById(decoded.examId);
     const student = await Student.findById(decoded.studentId);
-    _io.to(`institution:${decoded.institutionId}`).emit('server:session-started', {
+    _io.of('/admin-dashboard').to(`institution:${decoded.institutionId}`).emit('server:session-started', {
       sessionId: session._id,
       enrollmentId: enrollment._id,
       studentName: student?.fullName,
@@ -265,7 +293,7 @@ const recordViolation = async ({ sessionId, sessionToken, eventType, severity, t
 
   // Emit socket event
   if (_io) {
-    _io.to(`institution:${exam.institutionId}`).emit('server:violation-alert', {
+    _io.of('/admin-dashboard').to(`institution:${exam.institutionId}`).emit('server:violation-alert', {
       alertId: alert._id,
       enrollmentId: enrollment._id,
       sessionId: session._id,
@@ -328,7 +356,7 @@ const endSession = async ({ sessionId, sessionToken, endReason }) => {
     if (_io) {
       const exam = enrollment.examId;
       const student = enrollment.studentId;
-      _io.to(`institution:${exam?.institutionId}`).emit('server:session-ended', {
+      _io.of('/admin-dashboard').to(`institution:${exam?.institutionId}`).emit('server:session-ended', {
         sessionId: session._id,
         enrollmentId: enrollment._id,
         studentName: student?.fullName,

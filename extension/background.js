@@ -92,26 +92,23 @@ async function stopMonitoring(reason = 'completed') {
   Object.values(violationTimers).forEach(clearTimeout);
   violationTimers = {};
 
-  // Send final session end (best-effort)
+  // Send session end to backend (best-effort)
   try {
     const settings = await getSettings();
-    const { serverUrl, institutionKey } = settings;
-    if (institutionKey) {
-      await fetch(`${serverUrl}/api/ext/heartbeat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-extension-key': institutionKey,
-        },
-        body: JSON.stringify({
-          sessionToken: session.sessionToken,
-          sessionId: session.sessionId,
-          currentStatus: 'paused',
-          faceDetected: false,
-          violationCount: session.violationCount,
-        }),
-      });
-    }
+    const { serverUrl } = settings;
+    const endReason = reason === 'terminated' ? 'terminated'
+      : reason === 'tab_closed' ? 'student_left'
+      : 'completed';
+    await fetch(`${serverUrl}/api/sessions/${session.sessionId}/end`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionToken: session.sessionToken,
+        endReason,
+      }),
+    });
   } catch (_) {}
 
   // Remove overlay from exam tab

@@ -56,8 +56,9 @@ async function _refreshAccessToken() {
 
     if (!res.ok) {
       tokens.clear();
-      // Redirect to login on total auth failure
-      window.location.href = '/login';
+      // Force navigation to login — clear any persisted user data
+      try { localStorage.removeItem('fte_user'); } catch {}
+      window.location.replace('/login');
       throw new Error('Session expired. Please log in again.');
     }
 
@@ -217,10 +218,6 @@ export const institutionApi = {
   getStats: () =>
     api.get('/institution/stats'),
 
-  /** Regenerate the extension API key. */
-  regenerateApiKey: () =>
-    api.post('/institution/regenerate-api-key'),
-
   /** Get institution settings (monitoring defaults, notifications, retention). */
   getSettings: () =>
     api.get('/institution/settings'),
@@ -318,7 +315,7 @@ export const studentsApi = {
   update: (id, data) =>
     api.put(`/students/${id}`, data),
 
-  /** Deactivate a student. */
+  /** Permanently delete a student and all their exam data. */
   delete: (id) =>
     api.delete(`/students/${id}`),
 };

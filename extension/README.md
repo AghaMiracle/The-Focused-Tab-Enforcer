@@ -91,8 +91,8 @@ extension/
 1. Student opens exam page in Chrome
 2. Clicks the FT extension icon
 3. Enters: Exam ID, Email, Registration Number
-4. Extension POSTs to /api/ext/verify with x-extension-key header
-5. Backend returns sessionToken + examConfig
+4. Extension POSTs to /api/ext/verify with exam credentials
+5. Backend looks up the exam → finds the institution automatically
 6. Background script starts monitoring session
 7. Content script injects:
    - Glassmorphism status bar (top of page)
@@ -135,7 +135,7 @@ extension/
 
 ## Backend API
 
-All requests include `x-extension-key` header (institution API key).
+No API key required. The Exam ID in the request body links to the institution.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|

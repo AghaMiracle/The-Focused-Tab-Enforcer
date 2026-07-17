@@ -41,7 +41,6 @@ export const DEFAULT_THRESHOLDS = {
 // ─── Storage Keys ────────────────────────────────────────────────────────────
 export const STORAGE_KEYS = {
   ACTIVE_SESSION:     'fte_active_session',
-  INSTITUTION_KEY:    'fte_institution_key',
   SERVER_URL:         'fte_server_url',
   OFFLINE_QUEUE:      'fte_offline_queue',
   DEBUG_MODE:         'fte_debug_mode',
@@ -77,11 +76,13 @@ export const MSG = {
 };
 
 // ─── API Endpoints ───────────────────────────────────────────────────────────
+// Note: heartbeat/violation/end paths include :sessionId — see extension/utils/api.js
 export const API_ENDPOINTS = {
   VERIFY:     '/api/sessions/verify',
   CONFIG:     '/api/ext/config',
-  HEARTBEAT:  '/api/sessions/heartbeat',
-  LOG:        '/api/sessions/violation',
+  HEARTBEAT:  '/api/sessions/:id/heartbeat',
+  LOG:        '/api/sessions/:id/violation',
+  END:        '/api/sessions/:id/end',
 };
 
 // ─── Extension States ────────────────────────────────────────────────────────

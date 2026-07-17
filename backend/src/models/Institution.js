@@ -48,12 +48,6 @@ const institutionSchema = new mongoose.Schema(
       enum: ['free', 'pro', 'enterprise'],
       default: 'free',
     },
-    apiKey: {
-      type: String,
-      unique: true,
-      sparse: true,
-      select: false,
-    },
     passwordResetToken: {
       type: String,
       select: false,
@@ -137,7 +131,6 @@ institutionSchema.methods.toJSON = function () {
   delete obj.passwordResetToken;
   delete obj.passwordResetExpires;
   delete obj.refreshTokens;
-  delete obj.apiKey;
   return obj;
 };
 

@@ -53,18 +53,10 @@ if (process.env.NODE_ENV === 'production') {
 // CORS
 app.use(
   cors({
-    origin: (origin, callback) => {
-      const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',');
-      // Allow requests with no origin (curl, Postman, mobile apps)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked for origin: ${origin}`));
-      }
-    },
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-extension-key'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 

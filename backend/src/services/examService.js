@@ -111,6 +111,7 @@ const deleteExam = async ({ examId, institutionId }) => {
 
 /**
  * Bulk enroll students in an exam.
+ * Sends exam notification email to each newly enrolled student.
  * @param {string[]} studentIds - Array of student ObjectId strings
  */
 const enrollStudents = async ({ examId, institutionId, studentIds }) => {
@@ -125,22 +126,40 @@ const enrollStudents = async ({ examId, institutionId, studentIds }) => {
   const students = await Student.find({
     _id: { $in: studentIds },
     institutionId,
-  }).select('_id');
+  }).select('_id fullName email registrationNumber');
 
   if (students.length !== studentIds.length) {
     throw new AppError('Some student IDs are invalid or do not belong to this institution.', 400);
   }
 
+  const { sendExamEnrollmentEmail } = require('../utils/emailService');
+
   // Upsert enrollments (skip duplicates)
   const results = { enrolled: 0, alreadyEnrolled: 0, failed: 0 };
-  for (const studentId of studentIds) {
+  for (const student of students) {
     try {
-      await ExamEnrollment.findOneAndUpdate(
-        { examId: exam._id, studentId },
-        { examId: exam._id, studentId },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+      const enrollment = await ExamEnrollment.findOneAndUpdate(
+        { examId: exam._id, studentId: student._id },
+        { examId: exam._id, studentId: student._id },
+        { upsert: true, new: true, setDefaultsOnInsert: true, rawResult: true }
       );
-      results.enrolled++;
+
+      // Only send email for newly created enrollments (not duplicates)
+      if (enrollment.lastErrorObject?.updatedExisting === false) {
+        results.enrolled++;
+        // Send exam enrollment email with Exam ID (fire-and-forget)
+        sendExamEnrollmentEmail({
+          studentEmail: student.email,
+          studentName: student.fullName,
+          registrationNumber: student.registrationNumber,
+          examId: exam.examId,
+          examTitle: exam.title,
+          scheduledDate: exam.scheduledDate,
+          durationMinutes: exam.durationMinutes,
+        }).catch(() => {});
+      } else {
+        results.alreadyEnrolled++;
+      }
     } catch (err) {
       if (err.code === 11000) results.alreadyEnrolled++;
       else results.failed++;
