@@ -7,12 +7,14 @@ const { generateSessionToken } = require('../utils/tokenUtils');
 
 /**
  * Create a new exam.
+ * Defaults status to 'scheduled' so students see it in the extension immediately.
  */
 const createExam = async ({ institutionId, adminId, data }) => {
   const exam = await Exam.create({
     ...data,
     institutionId,
     createdBy: adminId,
+    status: data.status || 'scheduled',
   });
   return exam;
 };

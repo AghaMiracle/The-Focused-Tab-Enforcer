@@ -25,6 +25,7 @@ const realtimeAlertSchema = new mongoose.Schema(
       enum: [
         'tab_switch',
         'window_blur',
+        'app_switch',
         'face_absence',
         'multiple_faces',
         'attention_away',

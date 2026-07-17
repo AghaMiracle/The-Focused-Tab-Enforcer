@@ -25,7 +25,7 @@ const violationEventSchema = new mongoose.Schema(
     },
     eventType: {
       type: String,
-      enum: ['tab_switch', 'window_blur', 'face_absence', 'multiple_faces', 'attention_away'],
+      enum: ['tab_switch', 'window_blur', 'app_switch', 'face_absence', 'multiple_faces', 'attention_away'],
       required: [true, 'Event type is required'],
     },
     severity: {

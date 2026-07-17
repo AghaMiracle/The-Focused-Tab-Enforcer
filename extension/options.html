@@ -26,6 +26,9 @@
         <a class="nav-item active" data-section="connection" href="#">
           <span class="nav-icon">🔌</span> Connection
         </a>
+        <a class="nav-item" data-section="camera" href="#">
+          <span class="nav-icon">📷</span> Camera
+        </a>
         <a class="nav-item" data-section="preferences" href="#">
           <span class="nav-icon">⚙</span> Preferences
         </a>
@@ -68,6 +71,54 @@
           <div class="card-actions">
             <button class="btn-secondary" id="testConnectionBtn">Test Connection</button>
             <button class="btn-primary" id="saveConnectionBtn">Save Settings</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ Section: Camera ══ -->
+      <section class="opts-section hidden" id="section-camera">
+        <div class="section-header">
+          <h1 class="section-title">Camera</h1>
+          <p class="section-desc">Choose which webcam the extension should use for exam monitoring.</p>
+        </div>
+
+        <div class="settings-card">
+          <div class="field-group">
+            <label class="field-label" for="cameraSelect">Preferred Camera</label>
+            <select
+              class="field-input"
+              id="cameraSelect"
+              style="cursor: pointer; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22/></svg>'); background-repeat: no-repeat; background-position: right 14px center; padding-right: 42px;"
+            >
+              <option value="">Default (system chooses)</option>
+            </select>
+            <p class="field-hint">If you plug in an external or wireless webcam later, click <em>Refresh</em> to detect it.</p>
+          </div>
+
+          <div id="cameraPreviewWrap" style="display: none;">
+            <label class="field-label">Preview</label>
+            <div style="background: rgba(0,0,0,0.6); border: 1px solid var(--glass-border); border-radius: 12px; padding: 8px; display: flex; justify-content: center;">
+              <video
+                id="cameraPreview"
+                autoplay
+                muted
+                playsinline
+                style="width: 100%; max-width: 360px; aspect-ratio: 4/3; border-radius: 8px; object-fit: cover; background: #000; transform: scaleX(-1);"
+              ></video>
+            </div>
+          </div>
+
+          <div class="connection-test" id="cameraResult" aria-live="polite"></div>
+
+          <div class="info-note" style="background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.2);border-radius:12px;padding:14px 18px;font-size:12px;color:rgba(235,235,235,0.55);line-height:1.6;">
+            <strong style="color:#60a5fa;">First time?</strong><br/>
+            Click <em>Grant Camera Access</em> below so Chrome can show you the list of available cameras. This permission is granted to the extension only — you'll never be asked again.
+          </div>
+
+          <div class="card-actions">
+            <button class="btn-secondary" id="grantCameraBtn">Grant Camera Access</button>
+            <button class="btn-secondary" id="refreshCamerasBtn">Refresh List</button>
+            <button class="btn-primary" id="saveCameraBtn">Save Camera</button>
           </div>
         </div>
       </section>

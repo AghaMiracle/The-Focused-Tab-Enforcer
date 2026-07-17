@@ -16,13 +16,15 @@
 import { MSG, VIOLATION_TYPES, SEVERITY } from './utils/constants.js';
 import { getSession } from './utils/storage.js';
 import { isAllowedDomain, throttle } from './utils/helpers.js';
-import { createStatusBar, updateOverlay, showWarning, showTerminated, removeOverlay } from './overlay.js';
-import { startFaceDetection, stopFaceDetection } from './faceDetection.js';
+import { createStatusBar, updateOverlay, showWarning, showTerminated, removeOverlay, updatePreviewFrame } from './overlay.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let isMonitoring = false;
 let examConfig = null;
 let devToolsCheckInterval = null;
+// Note: Webcam capture, face detection, and snapshot streaming all run in the
+// offscreen document (extension origin). Content script only renders the
+// overlay UI and receives status/preview updates via messages.
 
 // ─── Initialize ───────────────────────────────────────────────────────────────
 async function init() {
@@ -65,20 +67,8 @@ async function activateMonitoring(session) {
   // DevTools detection
   startDevToolsDetection();
 
-  // Start face detection
-  const faceResult = await startFaceDetection(
-    examConfig,
-    (type, severity, meta) => sendViolation(type, severity, meta),
-    (detected) => sendFaceStatus(detected),
-    (err) => handleFaceError(err)
-  );
-
-  if (!faceResult.success) {
-    // Fallback: show error in overlay but continue with tab/window monitoring
-    showFaceError('Face detection unavailable. Tab monitoring is active.');
-  }
-
   // Tell background script content is ready
+  // (Face detection + webcam capture run in the offscreen document, started by background.js)
   chrome.runtime.sendMessage({ type: MSG.CONTENT_READY });
 }
 
@@ -261,7 +251,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (type) {
     case MSG.INIT_OVERLAY: {
-      createStatusBar(payload.examDetails, payload.studentName);
+      // Start full monitoring stack (overlay + anti-cheat + face detection)
+      const session = {
+        state: 'active',
+        examDetails: payload.examDetails,
+        studentName: payload.studentName,
+        examConfig: payload.examConfig,
+      };
+      activateMonitoring(session).catch((err) => console.warn('[FTE] activate error:', err));
       sendResponse({ ok: true });
       break;
     }
@@ -280,7 +277,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case MSG.REMOVE_OVERLAY: {
       removeOverlay();
-      stopFaceDetection();
       isMonitoring = false;
       clearInterval(devToolsCheckInterval);
       sendResponse({ ok: true });
@@ -289,11 +285,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case MSG.TERMINATE_EXAM: {
       removeOverlay();
-      stopFaceDetection();
       isMonitoring = false;
       clearInterval(devToolsCheckInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       showTerminated(payload?.reason || 'Your exam session has been terminated.');
+      sendResponse({ ok: true });
+      break;
+    }
+
+    // ── Offscreen-driven updates ─────────────────────────────────────
+    case MSG.FACE_STATUS: {
+      // Face status update from offscreen document (via background)
+      sendResponse({ ok: true });
+      break;
+    }
+
+    case 'PREVIEW_FRAME': {
+      // Live webcam preview frame from offscreen document
+      if (isMonitoring && payload?.frame) {
+        updatePreviewFrame(payload.frame);
+      }
+      sendResponse({ ok: true });
+      break;
+    }
+
+    case 'FACE_ERROR': {
+      showFaceError(payload?.message || 'Face detection error.');
       sendResponse({ ok: true });
       break;
     }

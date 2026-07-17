@@ -24,7 +24,7 @@ const violationSchema = Joi.object({
   sessionToken: Joi.string().required(),
   sessionId: Joi.string().required(),
   eventType: Joi.string()
-    .valid('tab_switch', 'window_blur', 'face_absence', 'multiple_faces', 'attention_away')
+    .valid('tab_switch', 'window_blur', 'app_switch', 'face_absence', 'multiple_faces', 'attention_away')
     .required(),
   severity: Joi.string().valid('low', 'medium', 'high').required(),
   timestamp: Joi.date().iso().required(),

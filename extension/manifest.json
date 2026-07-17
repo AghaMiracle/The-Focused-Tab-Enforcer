@@ -10,7 +10,8 @@
     "storage",
     "scripting",
     "alarms",
-    "notifications"
+    "notifications",
+    "offscreen"
   ],
 
   "host_permissions": ["<all_urls>"],
@@ -38,9 +39,14 @@
     }
   },
 
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+
   "web_accessible_resources": [
     {
-      "resources": ["models/*", "assets/*", "injected.js"],
+      "resources": ["models/*", "assets/*", "injected.js", "offscreen.html", "offscreen.js"],
       "matches": ["<all_urls>"]
     }
   ],

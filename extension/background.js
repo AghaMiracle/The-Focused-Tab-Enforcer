@@ -24,6 +24,30 @@ let violationTimers = {};     // Track pending grace-period timers
 let lastViolationTime = {};   // Throttle same-type violations
 let isOffline = false;
 
+// Offscreen document handshake state
+let offscreenReady = false;
+let offscreenReadyResolvers = [];
+
+function waitForOffscreenReady(timeoutMs = 6000) {
+  if (offscreenReady) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const idx = offscreenReadyResolvers.indexOf(entry);
+      if (idx !== -1) offscreenReadyResolvers.splice(idx, 1);
+      reject(new Error('Offscreen document did not become ready in time.'));
+    }, timeoutMs);
+    const entry = () => { clearTimeout(timer); resolve(); };
+    offscreenReadyResolvers.push(entry);
+  });
+}
+
+function resolveOffscreenReady() {
+  offscreenReady = true;
+  const resolvers = offscreenReadyResolvers.slice();
+  offscreenReadyResolvers = [];
+  resolvers.forEach((fn) => fn());
+}
+
 // ─── Restore session on SW activation ────────────────────────────────────────
 async function restoreSession() {
   const stored = await getSession();
@@ -45,13 +69,34 @@ async function log(...args) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  START MONITORING
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Normalize server-side thresholds (seconds) to the extension's
+ * millisecond-based config so face detection and tab-switch logic
+ * respect the admin's configured values.
+ */
+function normalizeExamConfig(raw) {
+  if (!raw) return {};
+  const out = {};
+  if (raw.tabSwitchSeconds != null)   out.tabSwitchGraceMs  = raw.tabSwitchSeconds * 1000;
+  if (raw.windowBlurSeconds != null)  out.windowBlurGraceMs = raw.windowBlurSeconds * 1000;
+  if (raw.faceAbsenceFrames != null) {
+    out.faceAbsenceFrames = raw.faceAbsenceFrames;
+    out.faceAbsenceMs = raw.faceAbsenceFrames * 500;
+  }
+  if (raw.multipleFaceTolerance != null) out.multipleFaceTolerance = raw.multipleFaceTolerance;
+  if (raw.attentionAwaySeconds != null)  out.attentionAwayMs = raw.attentionAwaySeconds * 1000;
+  return out;
+}
+
 async function startMonitoring({ sessionToken, sessionId, examConfig, examDetails, studentName, tabId }) {
+  const normalized = normalizeExamConfig(examConfig);
+
   session = {
     state: EXT_STATE.ACTIVE,
     sessionToken,
     sessionId,
     examTabId: tabId,
-    examConfig: { ...DEFAULT_THRESHOLDS, ...examConfig },
+    examConfig: { ...DEFAULT_THRESHOLDS, ...normalized },
     examDetails,
     studentName,
     violationCount: 0,
@@ -68,14 +113,120 @@ async function startMonitoring({ sessionToken, sessionId, examConfig, examDetail
   // Token rotation alarm (every 15 minutes)
   chrome.alarms.create('tokenRotate', { periodInMinutes: 15 });
 
-  // Notify content script to initialize overlay
+  // Notify content script to initialize overlay (visible UI in exam tab)
   chrome.tabs.sendMessage(tabId, {
     type: MSG.INIT_OVERLAY,
     payload: { examDetails, studentName, examConfig: session.examConfig },
   }).catch(() => {});
 
+  // Start webcam + face detection in the offscreen document
+  // (extension-origin, so getUserMedia works regardless of exam page origin)
+  await ensureOffscreenDocument();
+
+  // Wait for the offscreen document to signal it's fully loaded before
+  // sending START — prevents a race where the START message arrives
+  // before the listener is registered.
+  try {
+    await waitForOffscreenReady(6000);
+  } catch (err) {
+    log('Offscreen ready wait failed:', err.message);
+  }
+
+  const userSettings = await getSettings();
+  const startResp = await chrome.runtime.sendMessage({
+    type: 'OFFSCREEN_START',
+    payload: {
+      ...session.examConfig,
+      cameraDeviceId: userSettings.cameraDeviceId || null,
+    },
+  }).catch((err) => {
+    log('Failed to send OFFSCREEN_START:', err?.message);
+    return { ok: false, error: err?.message };
+  });
+
+  if (!startResp?.ok) {
+    log('Offscreen START did not succeed:', startResp?.error);
+    // Notify the content script so student sees why camera monitoring failed
+    if (session.examTabId) {
+      chrome.tabs.sendMessage(session.examTabId, {
+        type: 'FACE_ERROR',
+        payload: {
+          message: startResp?.error
+            || 'Camera monitoring failed to start. Check camera settings and permissions.',
+        },
+      }).catch(() => {});
+    }
+  }
+
   log('Monitoring started for session', sessionId);
   broadcastStatus();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  OFFSCREEN DOCUMENT LIFECYCLE
+// ─────────────────────────────────────────────────────────────────────────────
+const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
+let creatingOffscreen = null;
+
+async function hasOffscreenDocument() {
+  if (!chrome.runtime.getContexts) {
+    // Fallback for older browsers
+    return false;
+  }
+  const existing = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)],
+  });
+  return existing.length > 0;
+}
+
+async function ensureOffscreenDocument() {
+  if (!chrome.offscreen) {
+    log('chrome.offscreen API not available. Update Chrome to 109+.');
+    return;
+  }
+
+  if (await hasOffscreenDocument()) {
+    // Document already exists; assume it's ready
+    offscreenReady = true;
+    return;
+  }
+
+  // Not ready yet — reset the flag and wait for the READY signal
+  offscreenReady = false;
+
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+    return;
+  }
+
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: OFFSCREEN_DOCUMENT_PATH,
+    reasons: ['USER_MEDIA'],
+    justification: 'Face detection during proctored exam sessions.',
+  });
+
+  try {
+    await creatingOffscreen;
+  } catch (err) {
+    log('Failed to create offscreen document:', err?.message);
+  } finally {
+    creatingOffscreen = null;
+  }
+}
+
+async function closeOffscreenDocument() {
+  if (!chrome.offscreen) return;
+  try {
+    if (await hasOffscreenDocument()) {
+      await chrome.offscreen.closeDocument();
+    }
+  } catch (_) {
+    // Ignore
+  } finally {
+    offscreenReady = false;
+    offscreenReadyResolvers = [];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,6 +238,12 @@ async function stopMonitoring(reason = 'completed') {
   // Cancel alarms
   chrome.alarms.clear('heartbeat');
   chrome.alarms.clear('tokenRotate');
+
+  // Stop and close offscreen document (releases the webcam)
+  try {
+    await chrome.runtime.sendMessage({ type: 'OFFSCREEN_STOP' }).catch(() => {});
+    await closeOffscreenDocument();
+  } catch (_) {}
 
   // Clear grace timers
   Object.values(violationTimers).forEach(clearTimeout);
@@ -202,6 +359,27 @@ async function recordViolation(type, severity, metadata = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  SNAPSHOT FORWARDING
+// ─────────────────────────────────────────────────────────────────────────────
+async function forwardSnapshot({ snapshot, capturedAt }) {
+  if (!session) return;
+  try {
+    const { serverUrl } = await getSettings();
+    await fetch(`${serverUrl}/api/sessions/${session.sessionId}/snapshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: session.sessionToken,
+        snapshot,
+        capturedAt,
+      }),
+    });
+  } catch (_) {
+    // Snapshots are best-effort; ignore failures
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  HEARTBEAT
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleHeartbeat() {
@@ -289,18 +467,61 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 /**
- * Window focus changed — detect student switching to another application.
+ * Window focus changed — detect the student switching to another Chrome
+ * window, another app, or minimizing the browser entirely.
+ *
+ * WINDOW_ID_NONE means no Chrome window has focus — i.e. the student
+ * switched to another application on their computer (Word, WhatsApp, etc.)
+ * or minimized Chrome.
  */
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (!session) return;
+
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    handleWindowBlur();
+    // Student left Chrome entirely — this is an app switch (high severity)
+    handleAppSwitch();
   } else {
-    // Window regained focus — clear any pending blur timer
-    clearTimeout(violationTimers.windowBlur);
-    delete violationTimers.windowBlur;
+    // A Chrome window has focus — could be exam window or another Chrome window
+    try {
+      const win = await chrome.windows.get(windowId, { populate: false });
+      // Determine if the currently focused window contains the exam tab
+      const tabs = await chrome.tabs.query({ windowId, active: true });
+      const activeTab = tabs?.[0];
+      if (activeTab?.id !== session.examTabId) {
+        // Switched to another Chrome window
+        handleWindowBlur();
+      }
+      // Otherwise: back on the exam window — clear any pending blur timer
+      clearTimeout(violationTimers.windowBlur);
+      clearTimeout(violationTimers.appSwitch);
+      delete violationTimers.windowBlur;
+      delete violationTimers.appSwitch;
+    } catch (_) {
+      clearTimeout(violationTimers.windowBlur);
+      clearTimeout(violationTimers.appSwitch);
+    }
   }
 });
+
+function handleAppSwitch() {
+  // Student switched to another app (or minimized Chrome). Treat as high severity.
+  const graceMs = session?.examConfig?.windowBlurGraceMs ?? DEFAULT_THRESHOLDS.windowBlurGraceMs;
+
+  if (graceMs <= 0) {
+    recordViolation(VIOLATION_TYPES.APP_SWITCH, SEVERITY.HIGH, {
+      note: 'Student switched to another application or minimized the browser',
+    });
+    return;
+  }
+
+  clearTimeout(violationTimers.appSwitch);
+  violationTimers.appSwitch = setTimeout(() => {
+    recordViolation(VIOLATION_TYPES.APP_SWITCH, SEVERITY.HIGH, {
+      note: 'Student switched to another application or minimized the browser',
+    });
+    delete violationTimers.appSwitch;
+  }, graceMs);
+}
 
 function handleTabSwitch(newTabId) {
   const graceMs = session?.examConfig?.tabSwitchGraceMs ?? DEFAULT_THRESHOLDS.tabSwitchGraceMs;
@@ -426,6 +647,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
 
+    case MSG.SNAPSHOT: {
+      forwardSnapshot(payload).catch(() => {});
+      sendResponse({ ok: true });
+      return false;
+    }
+
     case MSG.PAGE_HIDDEN: {
       // Backup detection from Page Visibility API in content script
       const graceMs = session?.examConfig?.tabSwitchGraceMs ?? DEFAULT_THRESHOLDS.tabSwitchGraceMs;
@@ -441,6 +668,71 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MSG.PAGE_VISIBLE: {
       clearTimeout(violationTimers.pageHidden);
       delete violationTimers.pageHidden;
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    // ── Offscreen document messages ──────────────────────────────────
+    case 'OFFSCREEN_STATUS': {
+      // Face status update — forward to popup and content script
+      if (session) {
+        session.faceDetected = payload.faceDetected;
+        saveSession(session).catch(() => {});
+        if (session.examTabId) {
+          chrome.tabs.sendMessage(session.examTabId, {
+            type: MSG.FACE_STATUS,
+            payload: { detected: payload.faceDetected, faceCount: payload.faceCount },
+          }).catch(() => {});
+        }
+        broadcastStatus();
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    case 'OFFSCREEN_VIOLATION': {
+      // Face-related violation from offscreen document
+      const { violationType, severity: sev, metadata: meta } = payload;
+      recordViolation(violationType, sev, meta || {})
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+
+    case 'OFFSCREEN_SNAPSHOT': {
+      // Snapshot for admin dashboard
+      forwardSnapshot(payload).catch(() => {});
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    case 'OFFSCREEN_FRAME': {
+      // Preview frame for student's own overlay
+      if (session?.examTabId && payload?.frame) {
+        chrome.tabs.sendMessage(session.examTabId, {
+          type: 'PREVIEW_FRAME',
+          payload: { frame: payload.frame },
+        }).catch(() => {});
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    case 'OFFSCREEN_ERROR': {
+      log('Offscreen error:', payload?.message);
+      if (session?.examTabId) {
+        chrome.tabs.sendMessage(session.examTabId, {
+          type: 'FACE_ERROR',
+          payload: { message: payload?.message },
+        }).catch(() => {});
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    case 'OFFSCREEN_READY': {
+      log('Offscreen document ready.');
+      resolveOffscreenReady();
       sendResponse({ ok: true });
       return false;
     }

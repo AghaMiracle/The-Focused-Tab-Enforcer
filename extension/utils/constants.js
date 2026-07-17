@@ -14,6 +14,7 @@ export const VIOLATION_TYPES = {
   PERMISSION_DENIED: 'permission_denied',
   DEVTOOLS_OPENED: 'devtools_opened',
   FULLSCREEN_EXIT: 'fullscreen_exit',
+  APP_SWITCH:      'app_switch',
 };
 
 // ─── Severity Levels ────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ export const STORAGE_KEYS = {
   OFFLINE_QUEUE:      'fte_offline_queue',
   DEBUG_MODE:         'fte_debug_mode',
   NOTIFICATIONS:      'fte_notifications',
+  CAMERA_DEVICE_ID:   'fte_camera_device_id',
   SETTINGS:           'fte_settings',
 };
 
@@ -67,6 +69,7 @@ export const MSG = {
   // Content → Background
   VIOLATION_DETECTED: 'VIOLATION_DETECTED',
   FACE_STATUS:        'FACE_STATUS',
+  SNAPSHOT:           'SNAPSHOT',
   PAGE_VISIBLE:       'PAGE_VISIBLE',
   PAGE_HIDDEN:        'PAGE_HIDDEN',
   CONTENT_READY:      'CONTENT_READY',

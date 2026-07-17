@@ -53,15 +53,35 @@ export async function apiRequest(endpoint, body, options = {}) {
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 /**
- * Verify student credentials and retrieve session token.
- * POST /api/sessions/verify
+ * Step 1: Authenticate student and retrieve available exams.
+ * POST /api/sessions/authenticate
  *
  * @param {object} credentials
- * @param {string} credentials.examId
+ * @param {string} credentials.examId - Student's permanent Exam ID
  * @param {string} credentials.email
  * @param {string} credentials.registrationNumber
  * @returns {Promise<{
+ *   studentAuthToken: string,
+ *   studentName: string,
+ *   studentEmail: string,
+ *   availableExams: Array<{ _id, examId, title, description, scheduledDate, durationMinutes, status }>
+ * }>}
+ */
+export async function authenticateStudent(credentials) {
+  const result = await apiRequest('/api/sessions/authenticate', credentials);
+  return result.data;
+}
+
+/**
+ * Step 2: Start a monitoring session for a selected exam.
+ * POST /api/sessions/start-exam
+ *
+ * @param {object} payload
+ * @param {string} payload.studentAuthToken
+ * @param {string} payload.examId - The MongoDB _id of the exam being started
+ * @returns {Promise<{
  *   sessionToken: string,
+ *   sessionId: string,
  *   enrollmentId: string,
  *   isResuming: boolean,
  *   examDetails: object,
@@ -69,8 +89,8 @@ export async function apiRequest(endpoint, body, options = {}) {
  *   studentName: string
  * }>}
  */
-export async function verifyStudent(credentials) {
-  const result = await apiRequest('/api/sessions/verify', credentials);
+export async function startExamSession(payload) {
+  const result = await apiRequest('/api/sessions/start-exam', payload);
   return result.data;
 }
 

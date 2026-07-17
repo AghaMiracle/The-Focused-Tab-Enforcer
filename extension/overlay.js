@@ -25,6 +25,7 @@ function injectFonts() {
 let statusBar = null;
 let warningOverlay = null;
 let terminatedOverlay = null;
+let previewImg = null;
 let timerInterval = null;
 let startTime = null;
 let warningTimeout = null;
@@ -84,6 +85,40 @@ function createStatusBar(examDetails, studentName) {
     const el = document.getElementById('fte-timer');
     if (el) el.textContent = formatTime(elapsed);
   }, 1000);
+
+  // Create the webcam preview image (populated by updatePreviewFrame)
+  createPreviewElement();
+}
+
+// ─── Preview Element ──────────────────────────────────────────────────────────
+function createPreviewElement() {
+  if (previewImg) return;
+  previewImg = document.createElement('img');
+  previewImg.id = 'fte-preview';
+  previewImg.alt = 'Your webcam feed';
+  previewImg.style.cssText = `
+    position: fixed !important;
+    bottom: 16px !important;
+    right: 16px !important;
+    width: 200px !important;
+    height: 150px !important;
+    border-radius: 12px !important;
+    border: 2px solid rgba(204,255,0,0.4) !important;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5) !important;
+    object-fit: cover !important;
+    z-index: 2147483645 !important;
+    background: rgba(12,12,12,0.9) !important;
+    pointer-events: none !important;
+    opacity: 0.95 !important;
+  `;
+  document.body.appendChild(previewImg);
+}
+
+function updatePreviewFrame(dataUrl) {
+  if (!previewImg) createPreviewElement();
+  if (previewImg && dataUrl) {
+    previewImg.src = dataUrl;
+  }
 }
 
 // ─── Update Overlay Data ──────────────────────────────────────────────────────
@@ -177,8 +212,10 @@ function removeOverlay() {
   clearTimeout(warningTimeout);
   statusBar?.remove();
   warningOverlay?.remove();
+  previewImg?.remove();
   statusBar = null;
   warningOverlay = null;
+  previewImg = null;
   timerInterval = null;
 }
 
@@ -453,4 +490,5 @@ export {
   showWarning,
   showTerminated,
   removeOverlay,
+  updatePreviewFrame,
 };

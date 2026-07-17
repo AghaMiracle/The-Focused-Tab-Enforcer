@@ -6,15 +6,28 @@ const { protect } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
 // Public extension endpoints (token-based, no JWT auth)
+
+// Step 1: Authenticate student and list their available exams
 router.post(
-  '/verify',
+  '/authenticate',
   [
-    body('examId').notEmpty().withMessage('examId is required'),
-    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
-    body('registrationNumber').notEmpty().withMessage('registrationNumber is required'),
+    body('examId').trim().notEmpty().withMessage('examId is required'),
+    body('email').trim().isEmail().withMessage('Valid email is required'),
+    body('registrationNumber').trim().notEmpty().withMessage('registrationNumber is required'),
   ],
   validate,
-  controller.verifyStudent
+  controller.authenticateStudent
+);
+
+// Step 2: Pick an exam and start the monitoring session
+router.post(
+  '/start-exam',
+  [
+    body('studentAuthToken').notEmpty().withMessage('studentAuthToken is required'),
+    body('examId').notEmpty().withMessage('examId is required'),
+  ],
+  validate,
+  controller.startExamSession
 );
 
 router.post(
@@ -41,7 +54,7 @@ router.post(
   [
     body('sessionToken').notEmpty().withMessage('sessionToken is required'),
     body('eventType')
-      .isIn(['tab_switch', 'window_blur', 'face_absence', 'multiple_faces', 'attention_away'])
+      .isIn(['tab_switch', 'window_blur', 'app_switch', 'face_absence', 'multiple_faces', 'attention_away'])
       .withMessage('Invalid event type'),
     body('severity').isIn(['low', 'medium', 'high']).withMessage('Invalid severity'),
     body('timestamp').isISO8601().withMessage('Valid ISO timestamp is required'),
@@ -50,6 +63,16 @@ router.post(
   ],
   validate,
   controller.reportViolation
+);
+
+router.post(
+  '/:id/snapshot',
+  [
+    body('sessionToken').notEmpty().withMessage('sessionToken is required'),
+    body('snapshot').notEmpty().withMessage('snapshot is required'),
+  ],
+  validate,
+  controller.uploadSnapshot
 );
 
 router.post(

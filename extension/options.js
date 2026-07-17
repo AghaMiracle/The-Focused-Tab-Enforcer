@@ -25,6 +25,17 @@ const notificationsToggle = document.getElementById('notificationsToggle');
 const debugToggle         = document.getElementById('debugToggle');
 const savePrefsBtn        = document.getElementById('savePrefsBtn');
 
+// Camera
+const cameraSelect       = document.getElementById('cameraSelect');
+const cameraPreview      = document.getElementById('cameraPreview');
+const cameraPreviewWrap  = document.getElementById('cameraPreviewWrap');
+const cameraResult       = document.getElementById('cameraResult');
+const grantCameraBtn     = document.getElementById('grantCameraBtn');
+const refreshCamerasBtn  = document.getElementById('refreshCamerasBtn');
+const saveCameraBtn      = document.getElementById('saveCameraBtn');
+let previewStream = null;
+let savedCameraDeviceId = null;
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 navItems.forEach((item) => {
   item.addEventListener('click', (e) => {
@@ -35,6 +46,10 @@ navItems.forEach((item) => {
     sections.forEach((s) => {
       s.classList.toggle('hidden', s.id !== `section-${target}`);
     });
+    // Free the camera when leaving the camera section
+    if (target !== 'camera' && typeof stopPreview === 'function') {
+      stopPreview();
+    }
   });
 });
 
@@ -44,7 +59,123 @@ async function loadSettings() {
   serverUrlInput.value = settings.serverUrl || DEFAULT_SERVER_URL;
   notificationsToggle.checked = settings.notifications !== false;
   debugToggle.checked = settings.debugMode || false;
+  savedCameraDeviceId = settings.cameraDeviceId || null;
+
+  // Populate camera list (labels may be empty until permission is granted)
+  await refreshCameraList();
 }
+
+// ─── Camera Enumeration ───────────────────────────────────────────────────────
+async function refreshCameraList() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter((d) => d.kind === 'videoinput');
+
+    // Preserve the "default" option and replace the rest
+    cameraSelect.innerHTML = '<option value="">Default (system chooses)</option>';
+
+    cameras.forEach((cam, i) => {
+      const opt = document.createElement('option');
+      opt.value = cam.deviceId;
+      opt.textContent = cam.label || `Camera ${i + 1} (grant access to see name)`;
+      cameraSelect.appendChild(opt);
+    });
+
+    // Restore saved selection if it still exists
+    if (savedCameraDeviceId && cameras.some((c) => c.deviceId === savedCameraDeviceId)) {
+      cameraSelect.value = savedCameraDeviceId;
+    }
+
+    if (cameras.length === 0) {
+      showCameraResult('error', '✕ No cameras detected on this device.');
+    } else if (!cameras[0].label) {
+      showCameraResult('loading', 'ℹ Camera labels are hidden until you grant access.');
+    } else {
+      showCameraResult('', '');
+    }
+  } catch (err) {
+    showCameraResult('error', `✕ Failed to list cameras: ${err.message}`);
+  }
+}
+
+async function startPreview(deviceId) {
+  stopPreview();
+  try {
+    const constraints = {
+      video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: false,
+    };
+    previewStream = await navigator.mediaDevices.getUserMedia(constraints);
+    cameraPreview.srcObject = previewStream;
+    cameraPreviewWrap.style.display = 'block';
+    showCameraResult('success', '✓ Camera ready.');
+    // After granting permission, labels become available — refresh list
+    await refreshCameraList();
+  } catch (err) {
+    let msg = err.message;
+    if (err.name === 'NotAllowedError') msg = 'Permission denied. Please allow camera access.';
+    if (err.name === 'NotFoundError') msg = 'Selected camera is not connected.';
+    if (err.name === 'NotReadableError') msg = 'Camera is already in use by another application.';
+    showCameraResult('error', `✕ ${msg}`);
+  }
+}
+
+function stopPreview() {
+  if (previewStream) {
+    previewStream.getTracks().forEach((t) => t.stop());
+    previewStream = null;
+  }
+  if (cameraPreview) cameraPreview.srcObject = null;
+  cameraPreviewWrap.style.display = 'none';
+}
+
+function showCameraResult(type, message) {
+  if (!message) {
+    cameraResult.className = 'connection-test';
+    cameraResult.textContent = '';
+    return;
+  }
+  cameraResult.className = `connection-test ${type}`;
+  cameraResult.textContent = message;
+}
+
+// ─── Camera Event Handlers ────────────────────────────────────────────────────
+grantCameraBtn?.addEventListener('click', async () => {
+  grantCameraBtn.disabled = true;
+  grantCameraBtn.textContent = 'Requesting…';
+  await startPreview(cameraSelect.value || undefined);
+  grantCameraBtn.disabled = false;
+  grantCameraBtn.textContent = 'Grant Camera Access';
+});
+
+refreshCamerasBtn?.addEventListener('click', async () => {
+  refreshCamerasBtn.disabled = true;
+  refreshCamerasBtn.textContent = 'Refreshing…';
+  await refreshCameraList();
+  refreshCamerasBtn.disabled = false;
+  refreshCamerasBtn.textContent = 'Refresh List';
+});
+
+cameraSelect?.addEventListener('change', async () => {
+  const deviceId = cameraSelect.value;
+  if (previewStream) {
+    // Live-switch the preview to the newly selected camera
+    await startPreview(deviceId || undefined);
+  }
+});
+
+saveCameraBtn?.addEventListener('click', async () => {
+  const deviceId = cameraSelect.value || null;
+  await saveSettings({ cameraDeviceId: deviceId });
+  savedCameraDeviceId = deviceId;
+  const label = deviceId
+    ? (cameraSelect.options[cameraSelect.selectedIndex].textContent || 'Selected camera')
+    : 'Default camera';
+  showToast('success', `✓ Saved: ${label}`);
+});
+
+// Stop preview when leaving the camera section
+window.addEventListener('beforeunload', () => stopPreview());
 
 // ─── Test Connection ──────────────────────────────────────────────────────────
 testConnBtn?.addEventListener('click', async () => {

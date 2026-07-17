@@ -18,61 +18,110 @@ let _io = null;
 const setSocketIo = (io) => { _io = io; };
 
 /**
- * Verify student identity before starting an exam session.
- * Called by the browser extension.
- * Uses the student's permanent examId (e.g. UOLXA7B2K9) to identify them.
- * The exam must be active OR scheduled for the student to join.
+ * Step 1: Authenticate student and return their available exams.
+ * The student does NOT need to be pre-enrolled — any active or scheduled
+ * exam from their institution is available for selection.
  */
-const verifyStudent = async ({ examId, email, registrationNumber }) => {
-  // 1. Find the student by their permanent exam ID
-  const student = await Student.findOne({
-    examId: examId.toUpperCase(),
-  });
+const authenticateStudent = async ({ examId, email, registrationNumber }) => {
+  if (!examId || !email || !registrationNumber) {
+    throw new AppError('Exam ID, email, and registration number are required.', 400);
+  }
 
+  const student = await Student.findOne({ examId: examId.toUpperCase() });
   if (!student) {
-    throw new AppError('Student not found. Check your Exam ID.', 404);
+    throw new AppError('Invalid credentials. Check your Exam ID.', 404);
   }
 
-  // 2. Find the student's enrollment in an active or scheduled exam
-  const enrollment = await ExamEnrollment.findOne({
-    studentId: student._id,
-    enrollmentStatus: { $in: ['enrolled', 'in_progress'] },
-  }).populate('examId');
-
-  if (!enrollment || !enrollment.examId) {
-    throw new AppError('You are not enrolled in any upcoming exam.', 403);
+  if (student.email !== email.toLowerCase().trim()) {
+    throw new AppError('Invalid credentials. Email does not match.', 403);
+  }
+  if (student.registrationNumber !== registrationNumber.toUpperCase().trim()) {
+    throw new AppError('Invalid credentials. Registration number does not match.', 403);
   }
 
-  const exam = enrollment.examId;
+  // Fetch available exams (not completed or cancelled) for the student's institution
+  const availableExams = await Exam.find({
+    institutionId: student.institutionId,
+    status: { $in: ['draft', 'scheduled', 'active'] },
+  })
+    .select('_id examId title description scheduledDate durationMinutes status')
+    .sort({ status: 1, scheduledDate: 1 })
+    .lean();
 
-  // Allow active or scheduled exams
-  if (!['active', 'scheduled'].includes(exam.status)) {
-    throw new AppError(`Exam "${exam.title}" is not currently available (status: ${exam.status}).`, 403);
+  // Student auth token — valid for 12 hours so students don't have to
+  // re-login during long exam sessions.
+  const jwt = require('jsonwebtoken');
+  const studentAuthToken = jwt.sign(
+    {
+      studentId: student._id,
+      institutionId: student.institutionId,
+      type: 'student-auth',
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '12h' }
+  );
+
+  return {
+    studentAuthToken,
+    studentName: student.fullName,
+    studentEmail: student.email,
+    availableExams,
+  };
+};
+
+/**
+ * Step 2: Start an exam session for a specific exam.
+ * The student uses their studentAuthToken to pick an exam.
+ * Auto-creates an enrollment if one doesn't exist.
+ */
+const startExamSession = async ({ studentAuthToken, examId }) => {
+  const jwt = require('jsonwebtoken');
+  let decoded;
+  try {
+    decoded = jwt.verify(studentAuthToken, process.env.JWT_SECRET);
+  } catch {
+    throw new AppError('Session expired. Please log in again.', 401);
+  }
+  if (decoded.type !== 'student-auth') {
+    throw new AppError('Invalid token type.', 401);
   }
 
-  // 3. Verify email and registration number match
-  if (student.email !== email.toLowerCase() || student.registrationNumber !== registrationNumber.toUpperCase()) {
-    throw new AppError('Email or registration number does not match.', 403);
+  const student = await Student.findById(decoded.studentId);
+  if (!student) throw new AppError('Student not found.', 404);
+
+  const exam = await Exam.findOne({ _id: examId, institutionId: decoded.institutionId });
+  if (!exam) throw new AppError('Exam not found.', 404);
+
+  if (!['draft', 'scheduled', 'active'].includes(exam.status)) {
+    throw new AppError(`Exam "${exam.title}" is not available (status: ${exam.status}).`, 403);
+  }
+
+  // Auto-enroll if not already enrolled
+  let enrollment = await ExamEnrollment.findOne({ examId: exam._id, studentId: student._id });
+  if (!enrollment) {
+    enrollment = await ExamEnrollment.create({
+      examId: exam._id,
+      studentId: student._id,
+    });
   }
 
   if (enrollment.enrollmentStatus === 'disqualified') {
     throw new AppError('You have been disqualified from this exam.', 403);
   }
-
   if (['completed', 'absent'].includes(enrollment.enrollmentStatus)) {
     throw new AppError(`Your exam status is '${enrollment.enrollmentStatus}'.`, 403);
   }
 
-  // 4. Check for existing active session (resume support)
+  // Resume support: return existing active session if one exists
   const existingSession = await MonitoringSession.findOne({
     examEnrollmentId: enrollment._id,
     status: 'active',
   });
-
   if (existingSession) {
     return {
       sessionToken: existingSession.sessionToken,
       sessionId: existingSession._id,
+      enrollmentId: enrollment._id,
       isResuming: true,
       examDetails: {
         title: exam.title,
@@ -85,7 +134,7 @@ const verifyStudent = async ({ examId, email, registrationNumber }) => {
     };
   }
 
-  // 5. Generate session token
+  // Generate session token
   const sessionToken = generateSessionToken({
     enrollmentId: enrollment._id,
     studentId: student._id,
@@ -94,17 +143,19 @@ const verifyStudent = async ({ examId, email, registrationNumber }) => {
     type: 'session',
   });
 
-  // 6. Update verification status
+  // Mark enrollment as in_progress + verified
   enrollment.verificationStatus = 'verified';
   enrollment.verificationDetails = {
     faceMatched: false,
     confidenceScore: 0,
     verifiedAt: new Date(),
   };
+  enrollment.enrollmentStatus = 'in_progress';
+  enrollment.startedAt = new Date();
   await enrollment.save();
 
-  // 7. Auto-create monitoring session (so extension can start sending heartbeats/violations immediately)
-  const newSession = await MonitoringSession.create({
+  // Create monitoring session
+  const session = await MonitoringSession.create({
     examEnrollmentId: enrollment._id,
     sessionToken,
     startedAt: new Date(),
@@ -112,15 +163,10 @@ const verifyStudent = async ({ examId, email, registrationNumber }) => {
     lastHeartbeatAt: new Date(),
   });
 
-  // Mark enrollment as in_progress
-  enrollment.enrollmentStatus = 'in_progress';
-  enrollment.startedAt = new Date();
-  await enrollment.save();
-
-  // Emit socket event so admins see the session appear live
+  // Emit socket event
   if (_io) {
     _io.of('/admin-dashboard').to(`institution:${exam.institutionId}`).emit('server:session-started', {
-      sessionId: newSession._id,
+      sessionId: session._id,
       enrollmentId: enrollment._id,
       studentName: student.fullName,
       examTitle: exam.title,
@@ -131,7 +177,7 @@ const verifyStudent = async ({ examId, email, registrationNumber }) => {
 
   return {
     sessionToken,
-    sessionId: newSession._id,
+    sessionId: session._id,
     enrollmentId: enrollment._id,
     isResuming: false,
     examDetails: {
@@ -254,6 +300,7 @@ const recordViolation = async ({ sessionId, sessionToken, eventType, severity, t
   const typeMap = {
     tab_switch: 'tabSwitches',
     window_blur: 'windowBlurs',
+    app_switch: 'windowBlurs', // app-switch is a stronger form of window blur
     face_absence: 'faceAbsences',
     multiple_faces: 'multipleFaces',
     attention_away: 'attentionAway',
@@ -398,18 +445,22 @@ const getSessionReport = async ({ sessionId, institutionId }) => {
 };
 
 /**
- * Get all active sessions for an institution.
+ * Get all active monitoring sessions for an institution.
+ * Includes sessions on both `scheduled` and `active` exams — a session is
+ * "live" whenever a student is actively being monitored, regardless of the
+ * exam's admin-facing status.
  */
 const getLiveSessions = async ({ institutionId }) => {
-  const Exam = require('../models/Exam');
-  const activeExams = await Exam.find({ institutionId, status: 'active' });
-  const examIds = activeExams.map((e) => e._id);
-
-  const enrollments = await ExamEnrollment.find({
-    examId: { $in: examIds },
-    enrollmentStatus: 'in_progress',
+  // All non-terminal exams for this institution
+  const examIds = await Exam.distinct('_id', {
+    institutionId,
+    status: { $in: ['draft', 'scheduled', 'active'] },
   });
-  const enrollmentIds = enrollments.map((e) => e._id);
+
+  // Find monitoring sessions that are currently active for these exams
+  const enrollmentIds = await ExamEnrollment.distinct('_id', {
+    examId: { $in: examIds },
+  });
 
   const sessions = await MonitoringSession.find({
     examEnrollmentId: { $in: enrollmentIds },
@@ -447,13 +498,51 @@ const getSessionTimeline = async ({ sessionId, institutionId }) => {
   return violations;
 };
 
+/**
+ * Forward a webcam snapshot from the extension to admin dashboards
+ * via Socket.io. Snapshots are ephemeral (not persisted to DB).
+ */
+const forwardSnapshot = async ({ sessionId, sessionToken, snapshot, capturedAt }) => {
+  const session = await MonitoringSession.findById(sessionId)
+    .populate({
+      path: 'examEnrollmentId',
+      populate: [
+        { path: 'examId', select: 'title examId institutionId' },
+        { path: 'studentId', select: 'fullName email' },
+      ],
+    });
+
+  if (!session) throw new AppError('Session not found.', 404);
+  if (session.sessionToken !== sessionToken) throw new AppError('Token mismatch.', 401);
+  if (session.status !== 'active') return { forwarded: false };
+
+  const enrollment = session.examEnrollmentId;
+  const exam = enrollment?.examId;
+  const student = enrollment?.studentId;
+  if (!exam || !student) return { forwarded: false };
+
+  if (_io) {
+    _io.of('/admin-dashboard').to(`institution:${exam.institutionId}`).emit('server:session-snapshot', {
+      sessionId: session._id,
+      studentName: student.fullName,
+      examTitle: exam.title,
+      snapshot,
+      capturedAt: capturedAt || Date.now(),
+    });
+  }
+
+  return { forwarded: true };
+};
+
 module.exports = {
   setSocketIo,
-  verifyStudent,
+  authenticateStudent,
+  startExamSession,
   startSession,
   processHeartbeat,
   recordViolation,
   endSession,
+  forwardSnapshot,
   getSessionReport,
   getLiveSessions,
   getSessionTimeline,

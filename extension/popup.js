@@ -1,20 +1,24 @@
 /**
  * popup.js
  * Popup controller. Manages view state transitions:
- *   idle → verify → active
+ *   idle → verify → select → active
  *
  * Communicates with background.js via chrome.runtime.sendMessage.
  */
 
 import { MSG, EXT_STATE } from './utils/constants.js';
-import { getSession } from './utils/storage.js';
-import { verifyStudent } from './utils/api.js';
+import {
+  getSession,
+  saveAuthState, getAuthState, clearAuthState,
+} from './utils/storage.js';
+import { authenticateStudent, startExamSession } from './utils/api.js';
 import { formatTime } from './utils/helpers.js';
 
 // ─── DOM Refs ─────────────────────────────────────────────────────────────────
 const views = {
   idle:   document.getElementById('view-idle'),
   verify: document.getElementById('view-verify'),
+  select: document.getElementById('view-select'),
   active: document.getElementById('view-active'),
 };
 
@@ -22,7 +26,7 @@ const settingsBtn    = document.getElementById('settingsBtn');
 const footerSettings = document.getElementById('footerSettings');
 const goToSettings   = document.getElementById('goToSettings');
 
-// Verify form
+// Verify form (Step 1)
 const verifyForm     = document.getElementById('verifyForm');
 const examIdInput    = document.getElementById('examId');
 const emailInput     = document.getElementById('email');
@@ -32,6 +36,18 @@ const verifyBtnText  = verifyBtn?.querySelector('.btn-text');
 const verifyLoader   = document.getElementById('verifyLoader');
 const verifyError    = document.getElementById('verifyError');
 const verifyErrorMsg = document.getElementById('verifyErrorMsg');
+
+// Exam Select (Step 2)
+const selectSub      = document.getElementById('selectSub');
+const examSearch     = document.getElementById('examSearch');
+const examList       = document.getElementById('examList');
+const examListEmpty  = document.getElementById('examListEmpty');
+const selectError    = document.getElementById('selectError');
+const selectErrorMsg = document.getElementById('selectErrorMsg');
+const selectBackBtn  = document.getElementById('selectBackBtn');
+const startExamBtn   = document.getElementById('startExamBtn');
+const startExamBtnText = startExamBtn?.querySelector('.btn-text');
+const startExamLoader  = document.getElementById('startExamLoader');
 
 // Active view
 const activePulseDot    = document.getElementById('activePulseDot');
@@ -52,33 +68,34 @@ const confirmEndBtn     = document.getElementById('confirmEndBtn');
 // ─── State ────────────────────────────────────────────────────────────────────
 let timerInterval = null;
 let sessionStartedAt = null;
+let authState = null;      // { studentAuthToken, studentName, availableExams }
+let selectedExamId = null;
 
 // ─── View Switching ───────────────────────────────────────────────────────────
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
-    el.classList.toggle('hidden', key !== name);
+    if (el) el.classList.toggle('hidden', key !== name);
   });
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
-  // Get current session state from background
-  chrome.runtime.sendMessage({ type: MSG.GET_STATUS }, (resp) => {
+  // 1. Check for an active monitoring session first (highest priority)
+  chrome.runtime.sendMessage({ type: MSG.GET_STATUS }, async (resp) => {
     if (chrome.runtime.lastError) {
-      // Background not ready yet — check storage directly
-      checkStorageSession();
+      await tryRestoreSessionFromStorage();
       return;
     }
     if (resp?.session) {
       renderActiveView(resp.session);
-    } else {
-      // No active session — show verify form
-      showView('verify');
+      return;
     }
+    // 2. No active exam — check for persisted student auth state
+    await tryRestoreAuthState();
   });
 }
 
-async function checkStorageSession() {
+async function tryRestoreSessionFromStorage() {
   const session = await getSession();
   if (session && session.state === EXT_STATE.ACTIVE) {
     renderActiveView({
@@ -90,6 +107,21 @@ async function checkStorageSession() {
       faceDetected: session.faceDetected,
       isOffline: false,
     });
+  } else {
+    await tryRestoreAuthState();
+  }
+}
+
+async function tryRestoreAuthState() {
+  const saved = await getAuthState();
+  if (saved?.studentAuthToken) {
+    authState = saved;
+    selectedExamId = null;
+    selectSub.textContent = `Hello ${saved.studentName} — choose an exam to begin.`;
+    examSearch.value = '';
+    startExamBtn.disabled = true;
+    renderExamSelect('');
+    showView('select');
   } else {
     showView('verify');
   }
@@ -109,16 +141,13 @@ function renderActiveView(sessionData) {
     activeExamTitle.textContent = examDetails.title;
   }
 
-  // Update violation count
   const count = violationCount || 0;
   activeViolations.textContent = String(count);
   activeViolations.classList.toggle('has-violations', count > 0);
 
-  // Face status
   activeFaceStatus.textContent = faceDetected ? '✓ Detected' : '✕ No Face';
   activeFaceStatus.style.color = faceDetected ? 'var(--lime)' : 'var(--red)';
 
-  // Connection
   if (isOffline) {
     activeConnStatus.textContent = 'Offline';
     activeConnStatus.style.color = 'var(--orange)';
@@ -129,7 +158,6 @@ function renderActiveView(sessionData) {
     offlineBanner.classList.add('hidden');
   }
 
-  // Start timer
   clearInterval(timerInterval);
   sessionStartedAt = startedAt || Date.now();
   timerInterval = setInterval(() => {
@@ -138,25 +166,121 @@ function renderActiveView(sessionData) {
   }, 1000);
 }
 
-// ─── Verify Form ───────────────────────────────────────────────────────────────
+// ─── Render Exam Select View ──────────────────────────────────────────────────
+function renderExamSelect(filter = '') {
+  if (!authState) return;
+  const q = filter.trim().toLowerCase();
+  const exams = authState.availableExams.filter((e) =>
+    !q ||
+    e.title.toLowerCase().includes(q) ||
+    (e.examId || '').toLowerCase().includes(q)
+  );
+
+  examList.innerHTML = '';
+  if (exams.length === 0) {
+    examListEmpty.classList.remove('hidden');
+    return;
+  }
+  examListEmpty.classList.add('hidden');
+
+  for (const exam of exams) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'exam-card' + (selectedExamId === exam._id ? ' selected' : '');
+    card.dataset.examId = exam._id;
+    card.setAttribute('role', 'listitem');
+
+    const dateStr = exam.scheduledDate
+      ? new Date(exam.scheduledDate).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : 'Scheduled TBD';
+
+    card.innerHTML = `
+      <div class="exam-card-title">${escapeHtml(exam.title)}</div>
+      <div class="exam-card-meta">
+        <span class="exam-card-id">${escapeHtml(exam.examId || '—')}</span>
+        <span>·</span>
+        <span>${escapeHtml(dateStr)}</span>
+        <span>·</span>
+        <span>${exam.durationMinutes}m</span>
+        <span class="exam-card-status ${exam.status}">${exam.status}</span>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      selectedExamId = exam._id;
+      renderExamSelect(examSearch.value);
+      startExamBtn.disabled = false;
+    });
+
+    examList.appendChild(card);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+// ─── Verify Form (Step 1: Authenticate) ───────────────────────────────────────
 verifyForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  hideError();
+  hideVerifyError();
 
   const examId = examIdInput.value.trim();
   const email = emailInput.value.trim().toLowerCase();
   const registrationNumber = regNumInput.value.trim().toUpperCase();
 
   if (!examId || !email || !registrationNumber) {
-    showError('All fields are required.');
+    showVerifyError('All fields are required.');
     return;
   }
 
-  setLoading(true);
+  setVerifyLoading(true);
 
   try {
-    // Verify with backend
-    const result = await verifyStudent({ examId, email, registrationNumber });
+    const result = await authenticateStudent({ examId, email, registrationNumber });
+    authState = result;
+    selectedExamId = null;
+    // Persist auth state so student doesn't have to log in each time the popup opens
+    await saveAuthState(result);
+    selectSub.textContent = `Hello ${result.studentName} — choose an exam to begin.`;
+    examSearch.value = '';
+    startExamBtn.disabled = true;
+    renderExamSelect('');
+    showView('select');
+  } catch (err) {
+    showVerifyError(err.message || 'Login failed. Please try again.');
+  } finally {
+    setVerifyLoading(false);
+  }
+});
+
+// ─── Exam Search ──────────────────────────────────────────────────────────────
+examSearch?.addEventListener('input', (e) => {
+  renderExamSelect(e.target.value);
+});
+
+// ─── Back / Log Out ───────────────────────────────────────────────────────────
+selectBackBtn?.addEventListener('click', async () => {
+  authState = null;
+  selectedExamId = null;
+  await clearAuthState();
+  hideSelectError();
+  showView('verify');
+});
+
+// ─── Start Exam (Step 2) ──────────────────────────────────────────────────────
+startExamBtn?.addEventListener('click', async () => {
+  if (!authState || !selectedExamId) return;
+  hideSelectError();
+  setStartExamLoading(true);
+
+  try {
+    const result = await startExamSession({
+      studentAuthToken: authState.studentAuthToken,
+      examId: selectedExamId,
+    });
 
     // Get current active tab ID
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -165,7 +289,7 @@ verifyForm?.addEventListener('submit', async (e) => {
     // Start monitoring via background
     const resp = await sendToBackground(MSG.START_MONITORING, {
       sessionToken: result.sessionToken,
-      sessionId: result.sessionId || result.enrollmentId,
+      sessionId: result.sessionId,
       examConfig: result.monitoringConfig,
       examDetails: result.examDetails,
       studentName: result.studentName,
@@ -174,7 +298,6 @@ verifyForm?.addEventListener('submit', async (e) => {
 
     if (!resp.ok) throw new Error(resp.error || 'Failed to start monitoring.');
 
-    // Render active view
     renderActiveView({
       studentName: result.studentName,
       examDetails: result.examDetails,
@@ -183,11 +306,10 @@ verifyForm?.addEventListener('submit', async (e) => {
       faceDetected: false,
       isOffline: false,
     });
-
   } catch (err) {
-    showError(err.message || 'Verification failed. Please try again.');
+    showSelectError(err.message || 'Failed to start exam.');
   } finally {
-    setLoading(false);
+    setStartExamLoading(false);
   }
 });
 
@@ -206,7 +328,14 @@ confirmEndBtn?.addEventListener('click', async () => {
 
   const resp = await sendToBackground(MSG.END_EXAM, {});
   if (resp?.ok) {
-    showView('idle');
+    // Keep authState so student can pick another exam without re-logging in
+    selectedExamId = null;
+    if (authState) {
+      renderExamSelect('');
+      showView('select');
+    } else {
+      showView('verify');
+    }
   }
 });
 
@@ -227,7 +356,12 @@ chrome.runtime.onMessage.addListener((message) => {
       renderActiveView(session);
     } else {
       clearInterval(timerInterval);
-      showView('idle');
+      // If student is still logged in, show exam select; otherwise verify
+      if (authState) {
+        showView('select');
+      } else {
+        showView('verify');
+      }
     }
   }
 });
@@ -245,20 +379,36 @@ function sendToBackground(type, payload) {
   });
 }
 
-function setLoading(loading) {
+function setVerifyLoading(loading) {
   verifyBtn.disabled = loading;
   verifyBtnText.classList.toggle('hidden', loading);
   verifyLoader.classList.toggle('hidden', !loading);
 }
 
-function showError(msg) {
+function setStartExamLoading(loading) {
+  startExamBtn.disabled = loading || !selectedExamId;
+  startExamBtnText.classList.toggle('hidden', loading);
+  startExamLoader.classList.toggle('hidden', !loading);
+}
+
+function showVerifyError(msg) {
   verifyErrorMsg.textContent = msg;
   verifyError.classList.remove('hidden');
 }
 
-function hideError() {
+function hideVerifyError() {
   verifyError.classList.add('hidden');
   verifyErrorMsg.textContent = '';
+}
+
+function showSelectError(msg) {
+  selectErrorMsg.textContent = msg;
+  selectError.classList.remove('hidden');
+}
+
+function hideSelectError() {
+  selectError.classList.add('hidden');
+  selectErrorMsg.textContent = '';
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────

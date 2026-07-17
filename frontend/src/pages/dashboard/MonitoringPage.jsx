@@ -17,6 +17,9 @@ const severityColors = { high: '#ef4444', medium: '#f97316', low: '#eab308' };
 function SessionExpandedView({ session, onClose }) {
   const [timeline, setTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState(null);
+  const [snapshotAt, setSnapshotAt] = useState(null);
+  const { socket } = useSocket();
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +35,18 @@ function SessionExpandedView({ session, onClose }) {
     })();
     return () => { cancelled = true; };
   }, [session.id]);
+
+  // Subscribe to live snapshots for this session
+  useEffect(() => {
+    if (!socket) return;
+    const onSnapshot = (data) => {
+      if (data.sessionId?.toString() !== session.id?.toString()) return;
+      setSnapshot(data.snapshot);
+      setSnapshotAt(data.capturedAt || Date.now());
+    };
+    socket.on('server:session-snapshot', onSnapshot);
+    return () => socket.off('server:session-snapshot', onSnapshot);
+  }, [socket, session.id]);
 
   // Format elapsed time from a timestamp offset from session start
   const formatOffset = (ts) => {
@@ -84,6 +99,47 @@ function SessionExpandedView({ session, onClose }) {
           >
             <LuX size={14} aria-hidden="true" />
           </button>
+        </div>
+
+        {/* Live webcam feed */}
+        <div
+          className="relative rounded-2xl overflow-hidden mb-4"
+          style={{
+            aspectRatio: '4 / 3',
+            background: 'rgba(12,12,12,0.6)',
+            border: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          {snapshot ? (
+            <img
+              src={snapshot}
+              alt={`Live feed from ${session.studentName}`}
+              className="w-full h-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ color: 'rgba(235,235,235,0.4)' }}>
+              <LuScanFace size={40} aria-hidden="true" />
+              <span className="tech-label" style={{ fontSize: 10 }}>WAITING FOR FEED...</span>
+            </div>
+          )}
+
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+            style={{ background: 'rgba(12,12,12,0.85)', border: '1px solid rgba(239,68,68,0.4)' }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#ef4444' }} />
+            <span className="tech-label" style={{ color: '#ef4444', fontSize: 9 }}>LIVE</span>
+          </div>
+
+          {snapshotAt && (
+            <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(12,12,12,0.85)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <span className="tech-label" style={{ color: 'rgba(235,235,235,0.6)', fontSize: 9 }}>
+                {new Date(snapshotAt).toLocaleTimeString()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Status + time */}

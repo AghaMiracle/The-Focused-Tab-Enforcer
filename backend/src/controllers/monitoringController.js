@@ -2,11 +2,22 @@ const monitoringService = require('../services/monitoringService');
 const asyncHandler = require('../utils/asyncHandler');
 
 /**
- * POST /api/sessions/verify
+ * POST /api/sessions/authenticate
+ * Step 1 of student login: verify credentials, return available exams.
  */
-const verifyStudent = asyncHandler(async (req, res) => {
+const authenticateStudent = asyncHandler(async (req, res) => {
   const { examId, email, registrationNumber } = req.body;
-  const result = await monitoringService.verifyStudent({ examId, email, registrationNumber });
+  const result = await monitoringService.authenticateStudent({ examId, email, registrationNumber });
+  res.json({ status: 'success', data: result });
+});
+
+/**
+ * POST /api/sessions/start-exam
+ * Step 2 of student login: choose an exam and start the session.
+ */
+const startExamSession = asyncHandler(async (req, res) => {
+  const { studentAuthToken, examId } = req.body;
+  const result = await monitoringService.startExamSession({ studentAuthToken, examId });
   res.json({ status: 'success', data: result });
 });
 
@@ -49,6 +60,21 @@ const reportViolation = asyncHandler(async (req, res) => {
     metadata,
   });
   res.status(201).json({ status: 'success', data: { violationId: result.violation._id } });
+});
+
+/**
+ * POST /api/sessions/:id/snapshot
+ * Receive a webcam snapshot from the extension and forward via Socket.io.
+ */
+const uploadSnapshot = asyncHandler(async (req, res) => {
+  const { sessionToken, snapshot, capturedAt } = req.body;
+  const result = await monitoringService.forwardSnapshot({
+    sessionId: req.params.id,
+    sessionToken,
+    snapshot,
+    capturedAt,
+  });
+  res.json({ status: 'success', data: result });
 });
 
 /**
@@ -95,10 +121,12 @@ const getSessionTimeline = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  verifyStudent,
+  authenticateStudent,
+  startExamSession,
   startSession,
   heartbeat,
   reportViolation,
+  uploadSnapshot,
   endSession,
   getSessionReport,
   getLiveSessions,

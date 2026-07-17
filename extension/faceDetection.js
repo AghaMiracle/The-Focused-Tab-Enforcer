@@ -350,3 +350,33 @@ export function stopFaceDetection() {
 export function getVideoElement() {
   return videoElement;
 }
+
+/**
+ * Capture the current webcam frame as a low-resolution JPEG data URL.
+ * Used for live streaming to the admin dashboard.
+ * @param {number} width  - Target width in pixels (default 160)
+ * @param {number} quality - JPEG quality 0..1 (default 0.4)
+ * @returns {string|null}  Base64 data URL, or null if video not ready
+ */
+export function captureSnapshot(width = 160, quality = 0.4) {
+  if (!videoElement || videoElement.readyState < 2) return null;
+
+  try {
+    const vw = videoElement.videoWidth || 320;
+    const vh = videoElement.videoHeight || 240;
+    const aspectRatio = vh / vw;
+    const height = Math.round(width * aspectRatio);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    // Mirror to match the visual preview
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(videoElement, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+  } catch {
+    return null;
+  }
+}
