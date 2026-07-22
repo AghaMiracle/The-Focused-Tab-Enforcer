@@ -1,68 +1,79 @@
 /**
  * emailService.js
- * Transactional email via Brevo (@getbrevo/brevo v3.x).
- *
- * Correct pattern for v3.0.x:
- *   const api = new TransactionalEmailsApi()
- *   api.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY
- *   const email = new SendSmtpEmail()
- *   await api.sendTransacEmail(email)
+ * Transactional email via Gmail SMTP (nodemailer).
  *
  * Required env vars:
- *   BREVO_API_KEY    — Brevo API key (app.brevo.com → Settings → API Keys)
- *   EMAIL_FROM       — verified sender address registered in Brevo
- *   EMAIL_FROM_NAME  — display name  (default: Focused Tab Enforcer)
+ *   GMAIL_USER          — Your Gmail address (e.g. you@gmail.com)
+ *   GMAIL_APP_PASSWORD  — Gmail App Password (16-char, from Google Account
+ *                         Security → 2-Step Verification → App passwords)
+ *   EMAIL_FROM          — Sender address (defaults to GMAIL_USER)
+ *   EMAIL_FROM_NAME     — Display name (default: Focused Tab Enforcer)
+ *
+ * Gmail App Passwords (required — regular passwords no longer work):
+ *   https://myaccount.google.com/apppasswords
+ *
+ * You must have 2-Step Verification enabled to create an App Password.
+ *
+ * Gmail SMTP limits:
+ *   - 500 recipients/day (free Gmail)
+ *   - 2000 recipients/day (Google Workspace)
  */
 
-const { TransactionalEmailsApi, SendSmtpEmail } = require('@getbrevo/brevo');
+const nodemailer = require('nodemailer');
 const logger = require('./logger');
 
-// ─── Lazy singleton API instance ──────────────────────────────────────────────
-let _apiInstance = null;
+// ─── Lazy singleton transporter ───────────────────────────────────────────────
+let _transporter = null;
 
-function getApi() {
-  if (_apiInstance) return _apiInstance;
+function getTransporter() {
+  if (_transporter) return _transporter;
 
-  const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+
+  if (!user || !pass) {
     throw new Error(
-      'BREVO_API_KEY is not set. Add it to your .env file.\n' +
-      'Get your key at: https://app.brevo.com → Settings → API Keys'
+      'GMAIL_USER and GMAIL_APP_PASSWORD must be set in your .env file.\n' +
+      'Create an App Password at: https://myaccount.google.com/apppasswords\n' +
+      '(Requires 2-Step Verification enabled.)'
     );
   }
 
-  const api = new TransactionalEmailsApi();
-  api.authentications['apiKey'].apiKey = apiKey;
-  _apiInstance = api;
-  return _apiInstance;
+  _transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
+
+  return _transporter;
 }
 
 // ─── Core send ────────────────────────────────────────────────────────────────
 
 /**
- * Send a transactional email via Brevo.
+ * Send a transactional email via Gmail SMTP.
  * @param {{ to: string, subject: string, html: string, text?: string }} opts
  * @returns {Promise<object|null>}
  */
 const sendEmail = async ({ to, subject, html, text }) => {
   try {
-    const api = getApi();
+    const transporter = getTransporter();
 
-    const email = new SendSmtpEmail();
-    email.sender = {
-      name:  process.env.EMAIL_FROM_NAME || 'Focused Tab Enforcer',
-      email: process.env.EMAIL_FROM,
-    };
-    email.to          = [{ email: to }];
-    email.subject     = subject;
-    email.htmlContent = html;
-    email.textContent = text || html.replace(/<[^>]+>/g, '');
+    const from = `"${process.env.EMAIL_FROM_NAME || 'Focused Tab Enforcer'}" <${
+      process.env.EMAIL_FROM || process.env.GMAIL_USER
+    }>`;
 
-    const result = await api.sendTransacEmail(email);
-    logger.info(`[Brevo] Sent to ${to} — messageId: ${result?.body?.messageId ?? 'n/a'}`);
-    return result;
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject,
+      html,
+      text: text || html.replace(/<[^>]+>/g, ''),
+    });
+
+    logger.info(`[Gmail] Sent to ${to} — messageId: ${info?.messageId ?? 'n/a'}`);
+    return info;
   } catch (err) {
-    logger.error(`[Brevo] Failed to send to ${to}: ${err.message}`);
+    logger.error(`[Gmail] Failed to send to ${to}: ${err.message}`);
     return null; // never throw — email failure must not break request flow
   }
 };
