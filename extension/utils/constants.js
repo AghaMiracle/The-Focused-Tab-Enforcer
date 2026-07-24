@@ -58,6 +58,8 @@ export const MSG = {
   GET_STATUS:         'GET_STATUS',
   VERIFY_STUDENT:     'VERIFY_STUDENT',
   END_EXAM:           'END_EXAM',
+  PRELOAD_MODELS:     'PRELOAD_MODELS',   // warm the offscreen doc + face-api models on login
+  CLOSE_OFFSCREEN:    'CLOSE_OFFSCREEN',  // tear down the preloaded offscreen doc on logout
 
   // Background → Content
   INIT_OVERLAY:       'INIT_OVERLAY',

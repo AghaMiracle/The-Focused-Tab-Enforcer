@@ -50,15 +50,19 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// CORS
+// CORS — allow all origins (reflect the request origin so credentials still work).
+// The extension pulls from chrome-extension://<id>, the frontend from localhost:5173,
+// and third-party integrations may connect from other origins — all are accepted.
 app.use(
   cors({
-    origin: true,
+    origin: (_origin, cb) => cb(null, true),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+// Explicitly answer preflights on every route with the reflected origin.
+app.options('*', cors({ origin: (_origin, cb) => cb(null, true), credentials: true }));
 
 // ─── General Middleware ───────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));

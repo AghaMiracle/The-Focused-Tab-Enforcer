@@ -93,17 +93,17 @@ export async function clearSession() {
  */
 export async function getSettings() {
   const result = await storageGet([
-    STORAGE_KEYS.INSTITUTION_KEY,
     STORAGE_KEYS.SERVER_URL,
     STORAGE_KEYS.DEBUG_MODE,
     STORAGE_KEYS.NOTIFICATIONS,
+    STORAGE_KEYS.CAMERA_DEVICE_ID,
   ]);
 
   return {
-    institutionKey: result[STORAGE_KEYS.INSTITUTION_KEY] || '',
     serverUrl: result[STORAGE_KEYS.SERVER_URL] || DEFAULT_SERVER_URL,
     debugMode: result[STORAGE_KEYS.DEBUG_MODE] || false,
     notifications: result[STORAGE_KEYS.NOTIFICATIONS] !== false, // default true
+    cameraDeviceId: result[STORAGE_KEYS.CAMERA_DEVICE_ID] || null,
   };
 }
 
@@ -113,14 +113,14 @@ export async function getSettings() {
  */
 export async function saveSettings(settings) {
   const items = {};
-  if (settings.institutionKey !== undefined)
-    items[STORAGE_KEYS.INSTITUTION_KEY] = settings.institutionKey;
   if (settings.serverUrl !== undefined)
     items[STORAGE_KEYS.SERVER_URL] = settings.serverUrl;
   if (settings.debugMode !== undefined)
     items[STORAGE_KEYS.DEBUG_MODE] = settings.debugMode;
   if (settings.notifications !== undefined)
     items[STORAGE_KEYS.NOTIFICATIONS] = settings.notifications;
+  if (settings.cameraDeviceId !== undefined)
+    items[STORAGE_KEYS.CAMERA_DEVICE_ID] = settings.cameraDeviceId;
   await storageSet(items);
 }
 
@@ -166,4 +166,63 @@ export async function removeFromQueue(indices) {
   const indexSet = new Set(indices);
   const remaining = queue.filter((_, i) => !indexSet.has(i));
   await storageSet({ [STORAGE_KEYS.OFFLINE_QUEUE]: remaining });
+}
+
+
+// ─── Auth State Helpers (session-scoped: cleared on browser close) ───────────
+// Uses chrome.storage.session which lives only until the browser is closed.
+// Falls back to chrome.storage.local if session storage is unavailable.
+
+const AUTH_STATE_KEY = 'fte_auth_state';
+
+function sessionStore() {
+  return (chrome.storage && chrome.storage.session) || chrome.storage.local;
+}
+
+/**
+ * Save student auth state (token + student info + available exams).
+ * Persists until the browser is closed or the student logs out manually.
+ * @param {{ studentAuthToken: string, studentName: string, studentEmail: string, availableExams: Array }} authState
+ */
+export function saveAuthState(authState) {
+  return new Promise((resolve, reject) => {
+    sessionStore().set({ [AUTH_STATE_KEY]: authState }, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+/**
+ * Get the saved student auth state, or null if none.
+ * @returns {Promise<object|null>}
+ */
+export function getAuthState() {
+  return new Promise((resolve, reject) => {
+    sessionStore().get(AUTH_STATE_KEY, (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(result[AUTH_STATE_KEY] || null);
+      }
+    });
+  });
+}
+
+/**
+ * Clear the saved student auth state (manual logout).
+ */
+export function clearAuthState() {
+  return new Promise((resolve, reject) => {
+    sessionStore().remove(AUTH_STATE_KEY, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
 }

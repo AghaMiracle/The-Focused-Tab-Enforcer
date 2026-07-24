@@ -35,7 +35,15 @@ const monitoringSessionSchema = new mongoose.Schema(
     },
     endReason: {
       type: String,
-      enum: ['completed', 'terminated', 'student_left', 'timeout', 'admin_terminated', null],
+      enum: [
+        'completed',
+        'terminated',
+        'student_left',
+        'timeout',
+        'admin_terminated',
+        'browser_closed',
+        null,
+      ],
       default: null,
     },
     totalViolations: { type: Number, default: 0 },

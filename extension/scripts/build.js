@@ -44,6 +44,9 @@ const COPY_PATTERNS = [
   'options.html',
   'options.js',
   'options.css',
+  // Offscreen document (runs webcam + face detection off-screen)
+  'offscreen.html',
+  'offscreen.js',
   // Directories
   'utils/',
   'icons/',

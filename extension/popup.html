@@ -163,6 +163,11 @@
       <span class="error-msg" id="selectErrorMsg"></span>
     </div>
 
+    <div class="no-key-warning hidden" id="cameraWarning">
+      <span>📷</span>
+      <p>Camera access has not been granted yet. <button class="link-btn" id="grantCameraLink">Grant access</button></p>
+    </div>
+
     <div class="select-actions">
       <button type="button" class="btn-cancel" id="selectBackBtn">Log Out</button>
       <button type="button" class="btn-primary" id="startExamBtn" disabled>
@@ -219,6 +224,12 @@
     <div class="offline-banner hidden" id="offlineBanner">
       <span>📡</span>
       <span>Offline mode — violations are queued locally.</span>
+    </div>
+
+    <!-- Camera Error Banner -->
+    <div class="no-key-warning hidden" id="activeCameraError">
+      <span>📷</span>
+      <p><span id="activeCameraErrorMsg">Camera error</span> <button class="link-btn" id="activeCameraSettingsLink">Open Settings</button></p>
     </div>
 
     <!-- End Exam -->

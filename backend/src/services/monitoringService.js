@@ -244,6 +244,8 @@ const startSession = async ({ sessionToken }) => {
 
 /**
  * Process a heartbeat from the extension.
+ * Returns the current server-side status so the extension can react to
+ * admin-terminated / completed states without a special error path.
  */
 const processHeartbeat = async ({ sessionId, sessionToken, currentStatus, faceDetected, violationCount }) => {
   const session = await MonitoringSession.findById(sessionId);
@@ -253,8 +255,16 @@ const processHeartbeat = async ({ sessionId, sessionToken, currentStatus, faceDe
     throw new AppError('Session token mismatch.', 401);
   }
 
-  if (!['active', 'paused'].includes(session.status)) {
-    throw new AppError(`Session is not active (status: ${session.status}).`, 400);
+  // If the admin (or a cron job) already ended/terminated the session,
+  // don't error — return the current status so the extension can gracefully
+  // end monitoring on its side.
+  if (['terminated', 'completed'].includes(session.status)) {
+    return {
+      status: session.status,
+      endedAt: session.endedAt,
+      endReason: session.endReason,
+      lastHeartbeatAt: session.lastHeartbeatAt,
+    };
   }
 
   session.lastHeartbeatAt = new Date();

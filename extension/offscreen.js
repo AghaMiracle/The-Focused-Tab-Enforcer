@@ -12,14 +12,15 @@
 
 // ─── Constants (inline copy — offscreen is a classic script, no imports) ─────
 const MSG = {
-  OFFSCREEN_START:   'OFFSCREEN_START',
-  OFFSCREEN_STOP:    'OFFSCREEN_STOP',
-  OFFSCREEN_STATUS:  'OFFSCREEN_STATUS',
-  OFFSCREEN_FRAME:   'OFFSCREEN_FRAME',
-  OFFSCREEN_VIOLATION: 'OFFSCREEN_VIOLATION',
-  OFFSCREEN_SNAPSHOT:  'OFFSCREEN_SNAPSHOT',
-  OFFSCREEN_ERROR:   'OFFSCREEN_ERROR',
-  OFFSCREEN_READY:   'OFFSCREEN_READY',
+  OFFSCREEN_START:    'OFFSCREEN_START',
+  OFFSCREEN_STOP:     'OFFSCREEN_STOP',
+  OFFSCREEN_PRELOAD:  'OFFSCREEN_PRELOAD',
+  OFFSCREEN_STATUS:   'OFFSCREEN_STATUS',
+  OFFSCREEN_FRAME:    'OFFSCREEN_FRAME',
+  OFFSCREEN_VIOLATION:'OFFSCREEN_VIOLATION',
+  OFFSCREEN_SNAPSHOT: 'OFFSCREEN_SNAPSHOT',
+  OFFSCREEN_ERROR:    'OFFSCREEN_ERROR',
+  OFFSCREEN_READY:    'OFFSCREEN_READY',
 };
 
 const VIOLATION_TYPES = {
@@ -58,14 +59,115 @@ let multipleFacesStart = null;
 let cfg = { ...DEFAULTS };
 
 // ─── Load Models ──────────────────────────────────────────────────────────────
+// Cache the in-flight promise so concurrent callers (preload + start) share a
+// single load instead of triggering face-api's loaders twice.
+let modelsLoadingPromise = null;
+
 async function loadModels() {
   if (modelsLoaded) return;
+  if (modelsLoadingPromise) return modelsLoadingPromise;
   if (!window.faceapi) {
     throw new Error('face-api.js not loaded in offscreen document.');
   }
-  await window.faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_BASE);
-  await window.faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_BASE);
-  modelsLoaded = true;
+  modelsLoadingPromise = (async () => {
+    // face-api's built-in `loadFromUri` computes the manifest URL from the
+    // net's default model name and calls fetch() internally. In an MV3
+    // offscreen document, that internal fetch has been observed to throw
+    // "TypeError: Failed to fetch" against chrome-extension:// URLs on some
+    // Chrome builds — usually because of how the loader concatenates the
+    // base URL or handles the shard paths inside the manifest.
+    //
+    // To dodge every version-specific quirk we fetch the manifest JSON and
+    // shard bytes ourselves, then hand them to face-api via
+    // `loadFromWeightMap(...)` using the bundled tf.io.weightsLoaderFactory.
+    // This works on every recent Chrome/face-api combo.
+    await loadNetManually(window.faceapi.nets.tinyFaceDetector,   'tiny_face_detector_model');
+    await loadNetManually(window.faceapi.nets.faceLandmark68TinyNet, 'face_landmark_68_tiny_model');
+    modelsLoaded = true;
+  })();
+  try {
+    await modelsLoadingPromise;
+  } finally {
+    modelsLoadingPromise = null;
+  }
+}
+
+/**
+ * Load a face-api NeuralNetwork by fetching its manifest + weight shards
+ * ourselves and feeding them into the network's WeightMap.
+ *
+ * face-api's own `loadFromUri` has an internal fetch chain that fails on
+ * some Chrome/face-api combos when the URI is a `chrome-extension://` URL
+ * (surfaces as "TypeError: Failed to fetch"). We sidestep that entirely by:
+ *   1. Fetching the JSON manifest via chrome.runtime.getURL(...) directly.
+ *   2. Fetching each shard file listed in the manifest.
+ *   3. Concatenating shard bytes into one ArrayBuffer.
+ *   4. Calling `faceapi.tf.io.decodeWeights(buffer, weightSpecs)` to build
+ *      the WeightMap tf expects.
+ *   5. Calling `net.loadFromWeightMap(weightMap)` — face-api's public API
+ *      that skips its URL loader entirely.
+ *
+ * Both `decodeWeights` and `loadFromWeightMap` are confirmed present in the
+ * bundled face-api.min.js.
+ */
+async function loadNetManually(net, modelName) {
+  const faceapi = window.faceapi;
+  if (!faceapi?.tf?.io?.decodeWeights) {
+    throw new Error('face-api build is missing tf.io.decodeWeights — cannot load models.');
+  }
+
+  const manifestUrl = chrome.runtime.getURL(`models/${modelName}-weights_manifest.json`);
+  let manifest;
+  try {
+    const resp = await fetch(manifestUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${manifestUrl}`);
+    manifest = await resp.json();
+  } catch (err) {
+    throw new Error(`Could not load model manifest for ${modelName}: ${err.message}`);
+  }
+
+  // Manifest is [ { weights: [...specs], paths: ['shard1', 'shard2', ...] }, ... ]
+  const weightSpecs = [];
+  const shardBuffers = [];
+  for (const group of manifest) {
+    for (const spec of group.weights) weightSpecs.push(spec);
+    for (const shardName of group.paths) {
+      const shardUrl = chrome.runtime.getURL(`models/${shardName}`);
+      try {
+        const shardResp = await fetch(shardUrl);
+        if (!shardResp.ok) throw new Error(`HTTP ${shardResp.status} from ${shardUrl}`);
+        shardBuffers.push(await shardResp.arrayBuffer());
+      } catch (err) {
+        throw new Error(`Could not load weight shard ${shardName}: ${err.message}`);
+      }
+    }
+  }
+
+  // Concatenate every shard into a single contiguous buffer for decodeWeights.
+  const totalBytes = shardBuffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const concat = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const b of shardBuffers) {
+    concat.set(new Uint8Array(b), offset);
+    offset += b.byteLength;
+  }
+
+  const weightMap = faceapi.tf.io.decodeWeights(concat.buffer, weightSpecs);
+  net.loadFromWeightMap(weightMap);
+}
+
+// ─── Camera Permission Probe (no LED) ──────────────────────────────────────────
+// Reports whether the extension origin already has camera access, WITHOUT
+// opening the camera. Used during preload so the popup can warn the student
+// early if they still need to grant access via the Settings page.
+async function queryCameraPermission() {
+  try {
+    if (!navigator.permissions?.query) return 'unknown';
+    const status = await navigator.permissions.query({ name: 'camera' });
+    return status.state; // 'granted' | 'prompt' | 'denied'
+  } catch {
+    return 'unknown';
+  }
 }
 
 // ─── Init Webcam ──────────────────────────────────────────────────────────────
@@ -244,8 +346,10 @@ async function start(config) {
     await loadModels();
     await initWebcam(config?.cameraDeviceId || null);
   } catch (err) {
-    send(MSG.OFFSCREEN_ERROR, { message: err?.message || String(err) });
-    return { ok: false, error: err.message };
+    const errorName = err?.name || 'Error';
+    const errorMessage = err?.message || String(err);
+    send(MSG.OFFSCREEN_ERROR, { message: errorMessage, errorName });
+    return { ok: false, error: errorMessage, errorName, errorMessage };
   }
 
   isRunning = true;
@@ -302,6 +406,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+
+  // Preload face-api models without opening the camera. Called shortly after
+  // the student logs in so that when they click "Start Exam" the model load
+  // step is a no-op and only getUserMedia has to run. Also reports the current
+  // camera permission state so the popup can warn early if access is needed.
+  if (type === MSG.OFFSCREEN_PRELOAD) {
+    (async () => {
+      try {
+        await loadModels();
+        const cameraPermission = await queryCameraPermission();
+        sendResponse({ ok: true, cameraPermission });
+      } catch (err) {
+        send(MSG.OFFSCREEN_ERROR, { message: err?.message || String(err) });
+        sendResponse({ ok: false, error: err?.message });
+      }
+    })();
+    return true;
+  }
+
 });
 
 // Signal readiness to the service worker

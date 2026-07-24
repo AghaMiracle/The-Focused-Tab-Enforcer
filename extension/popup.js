@@ -48,6 +48,8 @@ const selectBackBtn  = document.getElementById('selectBackBtn');
 const startExamBtn   = document.getElementById('startExamBtn');
 const startExamBtnText = startExamBtn?.querySelector('.btn-text');
 const startExamLoader  = document.getElementById('startExamLoader');
+const cameraWarning    = document.getElementById('cameraWarning');
+const grantCameraLink  = document.getElementById('grantCameraLink');
 
 // Active view
 const activePulseDot    = document.getElementById('activePulseDot');
@@ -60,6 +62,9 @@ const activeViolations  = document.getElementById('activeViolations');
 const activeFaceStatus  = document.getElementById('activeFaceStatus');
 const activeConnStatus  = document.getElementById('activeConnStatus');
 const offlineBanner     = document.getElementById('offlineBanner');
+const activeCameraError = document.getElementById('activeCameraError');
+const activeCameraErrorMsg = document.getElementById('activeCameraErrorMsg');
+const activeCameraSettingsLink = document.getElementById('activeCameraSettingsLink');
 const endExamBtn        = document.getElementById('endExamBtn');
 const confirmOverlay    = document.getElementById('confirmOverlay');
 const cancelEndBtn      = document.getElementById('cancelEndBtn');
@@ -70,6 +75,7 @@ let timerInterval = null;
 let sessionStartedAt = null;
 let authState = null;      // { studentAuthToken, studentName, availableExams }
 let selectedExamId = null;
+let cameraPermission = 'unknown'; // 'granted' | 'prompt' | 'denied' | 'unknown'
 
 // ─── View Switching ───────────────────────────────────────────────────────────
 function showView(name) {
@@ -122,16 +128,62 @@ async function tryRestoreAuthState() {
     startExamBtn.disabled = true;
     renderExamSelect('');
     showView('select');
+    // Warm the offscreen doc + face-api models now so Start Exam is instant.
+    triggerPreload();
   } else {
     showView('verify');
   }
+}
+
+/**
+ * Ask the background service worker to warm the offscreen document
+ * (create it, load face-api.js, fetch the models) so that when the student
+ * clicks "Start Selected Exam", the only remaining step is getUserMedia.
+ *
+ * The background also reports the current camera-permission state (without
+ * turning the camera on). If access hasn't been granted yet, we surface a
+ * banner directing the student to the Settings page — the only place a
+ * permission prompt can appear reliably (a popup closes the moment the
+ * prompt steals focus).
+ *
+ * Fire-and-forget — never blocks the popup UI.
+ */
+function triggerPreload() {
+  chrome.runtime.sendMessage({ type: MSG.PRELOAD_MODELS }, (resp) => {
+    if (chrome.runtime.lastError) return; // preload is best-effort
+    if (resp && resp.ok) {
+      cameraPermission = resp.cameraPermission || 'unknown';
+      updateCameraHint();
+    }
+  });
+}
+
+/**
+ * Show or hide the dedicated camera-access banner in the exam-select view.
+ * We keep this separate from the generic error banner so the message is
+ * persistent and self-explanatory.
+ */
+function updateCameraHint() {
+  if (!cameraWarning) return;
+  const needsGrant = cameraPermission === 'denied' || cameraPermission === 'prompt';
+  cameraWarning.classList.toggle('hidden', !needsGrant);
 }
 
 // ─── Render Active View ────────────────────────────────────────────────────────
 function renderActiveView(sessionData) {
   showView('active');
 
-  const { studentName, examDetails, violationCount, startedAt, faceDetected, isOffline } = sessionData;
+  const { studentName, examDetails, violationCount, startedAt, faceDetected, isOffline, cameraError } = sessionData;
+
+  // Camera error banner — the most important signal when things break.
+  if (activeCameraError && activeCameraErrorMsg) {
+    if (cameraError) {
+      activeCameraErrorMsg.textContent = cameraError;
+      activeCameraError.classList.remove('hidden');
+    } else {
+      activeCameraError.classList.add('hidden');
+    }
+  }
 
   if (studentName) {
     activeStudentName.textContent = studentName;
@@ -249,6 +301,8 @@ verifyForm?.addEventListener('submit', async (e) => {
     startExamBtn.disabled = true;
     renderExamSelect('');
     showView('select');
+    // Warm the offscreen doc + face-api models now so Start Exam is instant.
+    triggerPreload();
   } catch (err) {
     showVerifyError(err.message || 'Login failed. Please try again.');
   } finally {
@@ -267,8 +321,38 @@ selectBackBtn?.addEventListener('click', async () => {
   selectedExamId = null;
   await clearAuthState();
   hideSelectError();
+  // Tear down the preloaded offscreen doc — no active exam needs it anymore.
+  chrome.runtime.sendMessage({ type: MSG.CLOSE_OFFSCREEN }, () => {
+    void chrome.runtime.lastError;
+  });
   showView('verify');
 });
+
+// ─── Camera-error mapper ──────────────────────────────────────────────────────
+/**
+ * Convert a raw getUserMedia error (name + message) coming back from the
+ * offscreen document into a student-facing message. Also decides whether we
+ * should send the student to chrome://settings to grant persistent access.
+ */
+function explainCameraFailure(errorName, errorMessage) {
+  const name = errorName || 'Error';
+  const raw  = errorMessage || 'Unknown camera error.';
+
+  if (name === 'NotAllowedError' || name === 'SecurityError' || /Permission|shutdown/i.test(raw)) {
+    openChromeCameraSettings();
+    return (
+      'Camera access is not persistent. In the Chrome tab that just opened, ' +
+      'set "Camera" to Allow (not "Allow this time"), reload the extension, then try again.'
+    );
+  }
+  if (name === 'NotReadableError') {
+    return 'Your camera is in use by another app (Zoom, Teams, Meet, etc.). Close it and try again.';
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    return 'No camera detected. Plug in a webcam or pick a different one in Settings → Camera.';
+  }
+  return 'Camera check failed: ' + name + ' — ' + raw;
+}
 
 // ─── Start Exam (Step 2) ──────────────────────────────────────────────────────
 startExamBtn?.addEventListener('click', async () => {
@@ -277,16 +361,19 @@ startExamBtn?.addEventListener('click', async () => {
   setStartExamLoading(true);
 
   try {
+    // 1. Get the current active tab (will be the exam window).
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error('Could not identify active tab.');
+
+    // 2. Register the session on the backend.
     const result = await startExamSession({
       studentAuthToken: authState.studentAuthToken,
       examId: selectedExamId,
     });
 
-    // Get current active tab ID
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) throw new Error('Could not identify active tab.');
-
-    // Start monitoring via background
+    // 3. Ask the background to start monitoring. This opens the camera in
+    //    the offscreen document. The response tells us whether the camera
+    //    actually came up, plus a structured error if not.
     const resp = await sendToBackground(MSG.START_MONITORING, {
       sessionToken: result.sessionToken,
       sessionId: result.sessionId,
@@ -298,6 +385,13 @@ startExamBtn?.addEventListener('click', async () => {
 
     if (!resp.ok) throw new Error(resp.error || 'Failed to start monitoring.');
 
+    // Even if the camera failed, the session is running (tab monitoring,
+    // heartbeat, backend session). We render the active view and surface
+    // the camera error inside it so the student can act on it.
+    const cameraErrorMsg = resp.cameraOk
+      ? null
+      : explainCameraFailure(resp.cameraErrorName, resp.cameraError);
+
     renderActiveView({
       studentName: result.studentName,
       examDetails: result.examDetails,
@@ -305,6 +399,7 @@ startExamBtn?.addEventListener('click', async () => {
       startedAt: Date.now(),
       faceDetected: false,
       isOffline: false,
+      cameraError: cameraErrorMsg,
     });
   } catch (err) {
     showSelectError(err.message || 'Failed to start exam.');
@@ -347,6 +442,22 @@ function openSettings() {
 settingsBtn?.addEventListener('click', openSettings);
 footerSettings?.addEventListener('click', (e) => { e.preventDefault(); openSettings(); });
 goToSettings?.addEventListener('click', openSettings);
+/**
+ * Open Chrome's site-details page for THIS extension origin. That page lets
+ * the student flip Camera from "Ask (default)" or "Allow this time" to a
+ * persistent "Allow", which is what the offscreen doc requires.
+ */
+function openChromeCameraSettings() {
+  try {
+    const url = 'chrome://settings/content/siteDetails?site=chrome-extension%3A%2F%2F' + chrome.runtime.id + '%2F';
+    chrome.tabs.create({ url });
+  } catch {
+    openSettings();
+  }
+}
+
+grantCameraLink?.addEventListener('click', (e) => { e.preventDefault(); openChromeCameraSettings(); });
+activeCameraSettingsLink?.addEventListener('click', (e) => { e.preventDefault(); openChromeCameraSettings(); });
 
 // ─── Background Status Updates ────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message) => {

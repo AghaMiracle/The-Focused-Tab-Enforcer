@@ -47,11 +47,13 @@ const joiValidate = (schema, body) => {
 
 /**
  * POST /api/ext/verify
- * Verify student credentials and return session token.
+ * Legacy endpoint — routes to the current authenticate flow.
+ * Returns a student auth token + the exams available for that student's
+ * institution. The extension should follow up with /api/sessions/start-exam.
  */
 const verify = asyncHandler(async (req, res) => {
   const payload = joiValidate(verifySchema, req.body);
-  const result = await monitoringService.verifyStudent(payload);
+  const result = await monitoringService.authenticateStudent(payload);
   res.json({ status: 'success', data: result });
 });
 

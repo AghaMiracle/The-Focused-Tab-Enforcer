@@ -9,8 +9,8 @@
 
 import { VIOLATION_TYPES, SEVERITY, DEFAULT_THRESHOLDS } from './utils/constants.js';
 
-// face-api.js CDN URL (loaded dynamically to avoid SW context)
-const FACE_API_CDN = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
+// face-api.js local path (served from extension's web_accessible_resources)
+const FACE_API_LOCAL = chrome.runtime.getURL('assets/face-api.min.js');
 // Model base URL (served from extension's web_accessible_resources)
 const MODEL_BASE_URL = chrome.runtime.getURL('models');
 
@@ -48,13 +48,12 @@ async function loadFaceApi() {
       return;
     }
     const script = document.createElement('script');
-    script.src = FACE_API_CDN;
-    script.crossOrigin = 'anonymous';
+    script.src = FACE_API_LOCAL;  // local extension file, CSP-safe
     script.onload = () => {
       faceApiLoaded = true;
       resolve(true);
     };
-    script.onerror = () => reject(new Error('Failed to load face-api.js from CDN'));
+    script.onerror = () => reject(new Error('Failed to load face-api.js'));
     document.head.appendChild(script);
   });
 }
@@ -350,4 +349,34 @@ export function stopFaceDetection() {
  */
 export function getVideoElement() {
   return videoElement;
+}
+
+/**
+ * Capture the current webcam frame as a low-resolution JPEG data URL.
+ * Used for live streaming to the admin dashboard.
+ * @param {number} width  - Target width in pixels (default 160)
+ * @param {number} quality - JPEG quality 0..1 (default 0.4)
+ * @returns {string|null}  Base64 data URL, or null if video not ready
+ */
+export function captureSnapshot(width = 160, quality = 0.4) {
+  if (!videoElement || videoElement.readyState < 2) return null;
+
+  try {
+    const vw = videoElement.videoWidth || 320;
+    const vh = videoElement.videoHeight || 240;
+    const aspectRatio = vh / vw;
+    const height = Math.round(width * aspectRatio);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    // Mirror to match the visual preview
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(videoElement, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+  } catch {
+    return null;
+  }
 }

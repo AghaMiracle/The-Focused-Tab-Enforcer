@@ -46,7 +46,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["models/*", "assets/*", "injected.js", "offscreen.html", "offscreen.js"],
+      "resources": ["models/*", "assets/*", "offscreen.html", "offscreen.js"],
       "matches": ["<all_urls>"]
     }
   ],

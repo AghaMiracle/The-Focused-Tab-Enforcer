@@ -13,8 +13,9 @@ const Institution = require('../models/Institution');
  */
 const initSocket = (httpServer) => {
   const io = new Server(httpServer, {
+    // Allow all origins for Socket.io as well
     cors: {
-      origin: true,
+      origin: (_origin, cb) => cb(null, true),
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -124,18 +125,38 @@ const initSocket = (httpServer) => {
             endReason: 'admin_terminated',
           },
           { new: true }
-        );
+        ).populate({
+          path: 'examEnrollmentId',
+          populate: [
+            { path: 'examId', select: 'title institutionId' },
+            { path: 'studentId', select: 'fullName' },
+          ],
+        });
 
-        if (session) {
-          // Notify the entire institution room
-          adminDashboard.to(room).emit('server:session-terminated', {
-            sessionId,
-            reason: reason || 'Terminated by admin',
-            terminatedBy: socket.user.fullName || socket.user.name,
-            timestamp: new Date(),
-          });
-          logger.info(`Session ${sessionId} terminated by admin ${socket.id}`);
+        if (!session) return;
+
+        // Also mark the enrollment as disqualified so reports and student
+        // history reflect the termination.
+        const ExamEnrollment = require('../models/ExamEnrollment');
+        const enrollment = session.examEnrollmentId;
+        if (enrollment) {
+          await ExamEnrollment.updateOne(
+            { _id: enrollment._id },
+            { $set: { enrollmentStatus: 'disqualified', submittedAt: new Date() } }
+          );
         }
+
+        // Notify the entire institution room so all admins update in real time.
+        adminDashboard.to(room).emit('server:session-terminated', {
+          sessionId,
+          enrollmentId: enrollment?._id,
+          studentName: enrollment?.studentId?.fullName,
+          examTitle: enrollment?.examId?.title,
+          reason: reason || 'Terminated by admin',
+          terminatedBy: socket.user.fullName || socket.user.name,
+          timestamp: new Date(),
+        });
+        logger.info(`Session ${sessionId} terminated by admin ${socket.id}`);
       } catch (err) {
         logger.error(`Session termination error: ${err.message}`);
       }

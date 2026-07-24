@@ -79,7 +79,7 @@ router.post(
   '/:id/end',
   [
     body('sessionToken').notEmpty().withMessage('sessionToken is required'),
-    body('endReason').optional().isIn(['completed', 'terminated', 'student_left']),
+    body('endReason').optional().isIn(['completed', 'terminated', 'student_left', 'browser_closed']),
   ],
   validate,
   controller.endSession

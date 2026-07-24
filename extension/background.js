@@ -14,6 +14,7 @@ import {
   getSession, saveSession, clearSession,
   enqueueViolation, getOfflineQueue, clearOfflineQueue,
   removeFromQueue, getSettings,
+  clearAuthState,
 } from './utils/storage.js';
 import { logViolation, sendHeartbeat, flushOfflineQueue, isOnline } from './utils/api.js';
 import { throttle, retryWithBackoff } from './utils/helpers.js';
@@ -48,17 +49,95 @@ function resolveOffscreenReady() {
   resolvers.forEach((fn) => fn());
 }
 
-// ─── Restore session on SW activation ────────────────────────────────────────
-async function restoreSession() {
-  const stored = await getSession();
-  if (stored && stored.state === EXT_STATE.ACTIVE) {
-    session = stored;
-    log('Session restored from storage:', session.sessionId);
-    // Re-register the heartbeat alarm
-    chrome.alarms.create('heartbeat', { periodInMinutes: 0.5 });
+// ─── Browser lifecycle: end stale sessions on browser (re)start ──────────────
+//
+// `chrome.storage.session` is cleared automatically when the browser closes.
+// We stamp a "browserAlive" flag there when a session starts and check it on
+// service-worker boot:
+//   - Flag present  → SW was killed but browser is still running → restore.
+//   - Flag missing  → Browser was closed since the session started
+//                      → end the session server-side and clear all state.
+const BROWSER_ALIVE_KEY = 'fte_browser_alive';
+
+function markBrowserAlive() {
+  return new Promise((resolve) => {
+    const store = (chrome.storage && chrome.storage.session) || chrome.storage.local;
+    store.set({ [BROWSER_ALIVE_KEY]: true }, () => resolve());
+  });
+}
+
+function isBrowserAlive() {
+  return new Promise((resolve) => {
+    const store = (chrome.storage && chrome.storage.session) || chrome.storage.local;
+    store.get(BROWSER_ALIVE_KEY, (result) => resolve(!!result[BROWSER_ALIVE_KEY]));
+  });
+}
+
+/**
+ * End an exam session on the backend without going through in-memory state.
+ * Used to clean up sessions left behind when the browser was closed abruptly.
+ */
+async function endStaleSessionOnServer(stored) {
+  try {
+    const { serverUrl } = await getSettings();
+    await fetch(`${serverUrl}/api/sessions/${stored.sessionId}/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: stored.sessionToken,
+        endReason: 'browser_closed',
+      }),
+    });
+    log('Stale session ended on server:', stored.sessionId);
+  } catch (err) {
+    log('Failed to end stale session:', err?.message);
   }
 }
-restoreSession();
+
+// ─── Restore or clean up on service-worker boot ─────────────────────────────
+async function bootstrap() {
+  const stored = await getSession();
+  const browserWasAlive = await isBrowserAlive();
+
+  if (stored && stored.state === EXT_STATE.ACTIVE) {
+    if (!browserWasAlive) {
+      // Browser was closed since the session started — end it and wipe state.
+      log('Browser was closed during an active exam; ending stale session.');
+      await endStaleSessionOnServer(stored);
+      await clearSession();
+      await clearAuthState().catch(() => {});
+      chrome.action.setBadgeText({ text: '' }).catch?.(() => {});
+      return;
+    }
+    // Same browser session — SW was just recycled. Restore in-memory state.
+    session = stored;
+    log('Session restored from storage:', session.sessionId);
+    chrome.alarms.create('heartbeat', { periodInMinutes: 0.5 });
+    return;
+  }
+
+  // No leftover session — just mark browser alive so future SW starts
+  // know we're in the same browser lifetime.
+  await markBrowserAlive();
+}
+bootstrap();
+
+// Fresh browser launch: onStartup fires exactly once per browser start.
+// Guarantee any leftover session is cleaned up regardless of storage.session
+// availability, then mark the browser alive for future SW restarts.
+chrome.runtime.onStartup.addListener(async () => {
+  log('Browser started — checking for stale exam sessions.');
+  const stored = await getSession();
+  if (stored && stored.state === EXT_STATE.ACTIVE) {
+    await endStaleSessionOnServer(stored);
+    await clearSession();
+  }
+  // Force-clear student auth on every fresh browser start so students
+  // must re-authenticate for a new exam.
+  await clearAuthState().catch(() => {});
+  chrome.action.setBadgeText({ text: '' }).catch?.(() => {});
+  await markBrowserAlive();
+});
 
 // ─── Logging helper ──────────────────────────────────────────────────────────
 async function log(...args) {
@@ -107,6 +186,7 @@ async function startMonitoring({ sessionToken, sessionId, examConfig, examDetail
   };
 
   await saveSession(session);
+  await markBrowserAlive();
 
   // Register heartbeat alarm (every 30 seconds)
   chrome.alarms.create('heartbeat', { periodInMinutes: 0.5 });
@@ -145,21 +225,34 @@ async function startMonitoring({ sessionToken, sessionId, examConfig, examDetail
   });
 
   if (!startResp?.ok) {
-    log('Offscreen START did not succeed:', startResp?.error);
-    // Notify the content script so student sees why camera monitoring failed
+    log('Offscreen START did not succeed:', startResp?.errorName, startResp?.error);
+    const msg = startResp?.error
+      || 'Camera monitoring failed to start. Check camera settings and permissions.';
+    // Persist on the session so the popup shows the reason too.
+    if (session) {
+      session.cameraError = msg;
+      session.cameraErrorName = startResp?.errorName || null;
+      await saveSession(session).catch(() => {});
+    }
+    // Notify the content script so student sees why camera monitoring failed.
     if (session.examTabId) {
       chrome.tabs.sendMessage(session.examTabId, {
         type: 'FACE_ERROR',
-        payload: {
-          message: startResp?.error
-            || 'Camera monitoring failed to start. Check camera settings and permissions.',
-        },
+        payload: { message: msg },
       }).catch(() => {});
     }
   }
 
   log('Monitoring started for session', sessionId);
   broadcastStatus();
+
+  // Return the outcome so START_MONITORING callers know whether the camera
+  // actually opened, and can react (open chrome://settings, etc.).
+  return {
+    cameraOk: !!startResp?.ok,
+    cameraError: startResp?.ok ? null : (startResp?.error || 'Camera failed to start.'),
+    cameraErrorName: startResp?.ok ? null : (startResp?.errorName || null),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,6 +322,43 @@ async function closeOffscreenDocument() {
   }
 }
 
+/**
+ * Preload the offscreen document and its face-api models.
+ *
+ * Called by the popup right after the student logs in. This front-loads the
+ * three slow steps (offscreen doc creation, face-api.min.js load, model
+ * fetch) so that when the student clicks "Start Selected Exam", the only
+ * remaining step is getUserMedia — the webcam LED lights up almost
+ * instantly.
+ *
+ * Idempotent: if the offscreen doc already exists and models are cached,
+ * this is effectively a no-op.
+ */
+async function preloadOffscreenModels() {
+  if (!chrome.offscreen) {
+    log('chrome.offscreen not available; skipping preload.');
+    return { ok: false, error: 'offscreen_api_unavailable' };
+  }
+
+  try {
+    await ensureOffscreenDocument();
+    await waitForOffscreenReady(6000);
+  } catch (err) {
+    log('Preload: failed to create/ready offscreen doc:', err?.message);
+    return { ok: false, error: err?.message };
+  }
+
+  const resp = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_PRELOAD' })
+    .catch((err) => ({ ok: false, error: err?.message }));
+
+  if (!resp?.ok) {
+    log('Preload: OFFSCREEN_PRELOAD did not succeed:', resp?.error);
+  } else {
+    log('Preload: face-api models are warm. Camera permission:', resp.cameraPermission);
+  }
+  return resp || { ok: false };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  STOP MONITORING
 // ─────────────────────────────────────────────────────────────────────────────
@@ -255,6 +385,7 @@ async function stopMonitoring(reason = 'completed') {
     const { serverUrl } = settings;
     const endReason = reason === 'terminated' ? 'terminated'
       : reason === 'tab_closed' ? 'student_left'
+      : reason === 'browser_closed' ? 'browser_closed'
       : 'completed';
     await fetch(`${serverUrl}/api/sessions/${session.sessionId}/end`, {
       method: 'POST',
@@ -394,9 +525,17 @@ async function handleHeartbeat() {
       violationCount: session.violationCount || 0,
     });
 
-    // Check for admin terminate command in heartbeat response
-    if (result?.data?.status === 'terminated') {
+    // Check for admin terminate / completed command in heartbeat response.
+    // Backend returns `{ status, ... }` at the top level of `data` (see
+    // monitoringService.processHeartbeat).
+    const serverStatus = result?.data?.status ?? result?.status;
+    if (serverStatus === 'terminated') {
       handleAdminTerminate();
+      return;
+    }
+    if (serverStatus === 'completed') {
+      log('Server reports session completed — stopping monitoring.');
+      await stopMonitoring('completed');
       return;
     }
 
@@ -592,7 +731,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // ── Popup requests ────────────────────────────────────────────────
     case MSG.START_MONITORING: {
       startMonitoring(payload)
-        .then(() => sendResponse({ ok: true }))
+        .then((result) => sendResponse({ ok: true, ...(result || {}) }))
         .catch((err) => sendResponse({ ok: false, error: err.message }));
       return true; // async
     }
@@ -611,6 +750,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
+    // Warm the offscreen document + face-api models on login so
+    // "Start Exam" only has to run getUserMedia.
+    case MSG.PRELOAD_MODELS: {
+      preloadOffscreenModels()
+        .then((resp) => sendResponse(resp))
+        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+
+    // Free the offscreen doc on logout (no active session).
+    case MSG.CLOSE_OFFSCREEN: {
+      if (session) {
+        // Don't tear down mid-exam
+        sendResponse({ ok: false, error: 'session_active' });
+        return false;
+      }
+      closeOffscreenDocument()
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+
     case MSG.GET_STATUS: {
       sendResponse({
         ok: true,
@@ -623,6 +784,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               startedAt: session.startedAt,
               faceDetected: session.faceDetected,
               isOffline,
+              cameraError: session.cameraError || null,
             }
           : null,
       });
@@ -677,6 +839,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Face status update — forward to popup and content script
       if (session) {
         session.faceDetected = payload.faceDetected;
+        // First successful frame means the camera is alive — clear any lingering error.
+        if (session.cameraError) session.cameraError = null;
         saveSession(session).catch(() => {});
         if (session.examTabId) {
           chrome.tabs.sendMessage(session.examTabId, {
@@ -720,6 +884,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'OFFSCREEN_ERROR': {
       log('Offscreen error:', payload?.message);
+      // Persist on the session so the popup can display it too.
+      if (session) {
+        session.cameraError = payload?.message || 'Camera error';
+        saveSession(session).catch(() => {});
+        broadcastStatus();
+      }
       if (session?.examTabId) {
         chrome.tabs.sendMessage(session.examTabId, {
           type: 'FACE_ERROR',
@@ -759,6 +929,7 @@ function broadcastStatus() {
             startedAt: session.startedAt,
             faceDetected: session.faceDetected,
             isOffline,
+            cameraError: session.cameraError || null,
           }
         : null,
     },

@@ -2,9 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LuScanFace, LuTriangleAlert, LuX, LuCircleCheck, LuRefreshCw,
+  LuOctagon,
 } from 'react-icons/lu';
 import { monitoringApi } from '../../utils/api';
 import { useSocket } from '../../context/SocketContext';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
 
 const statusConfig = {
   focused:   { label: 'Focused',   color: '#ccff00', bg: 'rgba(204,255,0,0.1)',  dot: '#ccff00' },
@@ -14,12 +17,40 @@ const statusConfig = {
 
 const severityColors = { high: '#ef4444', medium: '#f97316', low: '#eab308' };
 
-function SessionExpandedView({ session, onClose }) {
+function SessionExpandedView({ session, onClose, onTerminated }) {
   const [timeline, setTimeline] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotAt, setSnapshotAt] = useState(null);
+  const [terminating, setTerminating] = useState(false);
   const { socket } = useSocket();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  const handleTerminate = async () => {
+    if (!socket) {
+      toast.error('Real-time connection is not available. Try again in a moment.');
+      return;
+    }
+    const ok = await confirm({
+      title: 'Terminate exam session?',
+      message: `Force-end ${session.studentName}'s exam? Their enrollment will be marked as disqualified.`,
+      confirmLabel: 'Terminate',
+      danger: true,
+    });
+    if (!ok) return;
+
+    setTerminating(true);
+    socket.emit('admin:terminate-session', {
+      sessionId: session.id,
+      reason: 'Terminated by admin from live monitoring.',
+    });
+    // Optimistic UX — remove from list immediately; the socket ack
+    // (`server:session-terminated`) will fan out to other admins.
+    toast.success(`Session for ${session.studentName} terminated.`);
+    onTerminated?.(session.id);
+    onClose();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -206,6 +237,31 @@ function SessionExpandedView({ session, onClose }) {
             <div className="text-sm">No violations recorded</div>
           </div>
         )}
+
+        {/* Admin actions */}
+        <div className="flex gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-2xl text-sm font-medium hover:bg-white/5 transition-all"
+            style={{ color: 'rgba(235,235,235,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            Close
+          </button>
+          <button
+            onClick={handleTerminate}
+            disabled={terminating}
+            className="flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+            style={{
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.4)',
+              color: '#f87171',
+            }}
+            aria-label={`Terminate session for ${session.studentName}`}
+          >
+            {terminating ? <LuRefreshCw size={14} className="animate-spin" /> : <LuOctagon size={14} />}
+            {terminating ? 'Terminating...' : 'Terminate Session'}
+          </button>
+        </div>
       </motion.div>
     </motion.div>
   );
@@ -490,6 +546,9 @@ export default function MonitoringPage() {
           <SessionExpandedView
             session={selectedSession}
             onClose={() => setSelectedSession(null)}
+            onTerminated={(id) =>
+              setSessions((prev) => prev.filter((s) => s.id !== id))
+            }
           />
         )}
       </AnimatePresence>

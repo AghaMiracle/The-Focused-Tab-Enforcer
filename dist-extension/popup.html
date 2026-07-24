@@ -70,19 +70,19 @@
   ══════════════════════════════════════════════════════════════ -->
   <div class="view hidden" id="view-verify">
     <div class="verify-header">
-      <h2 class="verify-title">Start Exam Session</h2>
-      <p class="verify-sub">Enter your credentials to begin monitoring.</p>
+      <h2 class="verify-title">Student Login</h2>
+      <p class="verify-sub">Enter your credentials to see your available exams.</p>
     </div>
 
     <form class="verify-form" id="verifyForm" novalidate>
       <div class="field-group">
-        <label class="field-label" for="examId">Exam ID</label>
+        <label class="field-label" for="examId">Your Exam ID</label>
         <input
           class="field-input"
           type="text"
           id="examId"
           name="examId"
-          placeholder="e.g. EXAM-2025-001"
+          placeholder="e.g. UOLXA7B2K9"
           autocomplete="off"
           required
         />
@@ -120,7 +120,7 @@
       </div>
 
       <button type="submit" class="btn-primary" id="verifyBtn">
-        <span class="btn-text">Verify &amp; Start Monitoring</span>
+        <span class="btn-text">Log In</span>
         <span class="btn-loader hidden" id="verifyLoader">
           <svg class="spinner" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="60" stroke-dashoffset="20"/>
@@ -128,6 +128,57 @@
         </span>
       </button>
     </form>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       VIEW: SELECT EXAM (pick from available exams)
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="view hidden" id="view-select">
+    <div class="verify-header">
+      <h2 class="verify-title">Select Your Exam</h2>
+      <p class="verify-sub" id="selectSub">Hello — choose an exam to begin.</p>
+    </div>
+
+    <div class="exam-search-wrap">
+      <input
+        class="field-input"
+        type="search"
+        id="examSearch"
+        placeholder="Search exams by title or ID..."
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="exam-list" id="examList" role="list">
+      <!-- Exam cards injected here -->
+    </div>
+
+    <div class="empty-state hidden" id="examListEmpty">
+      <span>📚</span>
+      <p>No available exams for your institution right now.</p>
+    </div>
+
+    <div class="error-banner hidden" id="selectError" role="alert">
+      <span class="error-icon">✕</span>
+      <span class="error-msg" id="selectErrorMsg"></span>
+    </div>
+
+    <div class="no-key-warning hidden" id="cameraWarning">
+      <span>📷</span>
+      <p>Camera access has not been granted yet. <button class="link-btn" id="grantCameraLink">Grant access</button></p>
+    </div>
+
+    <div class="select-actions">
+      <button type="button" class="btn-cancel" id="selectBackBtn">Log Out</button>
+      <button type="button" class="btn-primary" id="startExamBtn" disabled>
+        <span class="btn-text">Start Selected Exam</span>
+        <span class="btn-loader hidden" id="startExamLoader">
+          <svg class="spinner" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="60" stroke-dashoffset="20"/>
+          </svg>
+        </span>
+      </button>
+    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -173,6 +224,12 @@
     <div class="offline-banner hidden" id="offlineBanner">
       <span>📡</span>
       <span>Offline mode — violations are queued locally.</span>
+    </div>
+
+    <!-- Camera Error Banner -->
+    <div class="no-key-warning hidden" id="activeCameraError">
+      <span>📷</span>
+      <p><span id="activeCameraErrorMsg">Camera error</span> <button class="link-btn" id="activeCameraSettingsLink">Open Settings</button></p>
     </div>
 
     <!-- End Exam -->
