@@ -10,9 +10,11 @@ import { useToast } from '../../components/ui/Toast';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 
 const statusConfig = {
-  focused:   { label: 'Focused',   color: '#ccff00', bg: 'rgba(204,255,0,0.1)',  dot: '#ccff00' },
-  warning:   { label: 'Warning',   color: '#f97316', bg: 'rgba(249,115,22,0.1)', dot: '#f97316' },
-  violation: { label: 'Violation', color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  dot: '#ef4444' },
+  focused:    { label: 'Focused',    color: '#ccff00', bg: 'rgba(204,255,0,0.1)',  dot: '#ccff00' },
+  warning:    { label: 'Warning',    color: '#f97316', bg: 'rgba(249,115,22,0.1)', dot: '#f97316' },
+  violation:  { label: 'Violation',  color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  dot: '#ef4444' },
+  ended:      { label: 'Ended',      color: 'rgba(235,235,235,0.55)', bg: 'rgba(235,235,235,0.05)', dot: 'rgba(235,235,235,0.5)' },
+  terminated: { label: 'Terminated', color: '#f87171', bg: 'rgba(239,68,68,0.05)',  dot: '#f87171' },
 };
 
 const severityColors = { high: '#ef4444', medium: '#f97316', low: '#eab308' };
@@ -67,11 +69,16 @@ function SessionExpandedView({ session, onClose, onTerminated }) {
     return () => { cancelled = true; };
   }, [session.id]);
 
-  // Subscribe to live snapshots for this session
+  // Subscribe to live snapshots for this session.
+  // Compare IDs defensively — server may emit ObjectId | string | number.
   useEffect(() => {
     if (!socket) return;
+    const targetId = String(session.id ?? '');
+    if (!targetId) return;
+
     const onSnapshot = (data) => {
-      if (data.sessionId?.toString() !== session.id?.toString()) return;
+      if (String(data?.sessionId ?? '') !== targetId) return;
+      if (!data?.snapshot) return;
       setSnapshot(data.snapshot);
       setSnapshotAt(data.capturedAt || Date.now());
     };
@@ -90,11 +97,26 @@ function SessionExpandedView({ session, onClose, onTerminated }) {
     return `${h}:${m}:${s}`;
   };
 
+  // Close on Escape + lock body scroll while the modal is open.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const isEnded = session.status === 'ended' || session.status === 'terminated' || session.ended;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      onClick={onClose}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
       role="dialog"
@@ -105,141 +127,166 @@ function SessionExpandedView({ session, onClose, onTerminated }) {
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.3 }}
-        className="w-full max-w-xl rounded-[2.5rem] p-8"
+        transition={{ duration: 0.25 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-xl rounded-[2rem] flex flex-col overflow-hidden"
         style={{
+          maxHeight: 'calc(100vh - 2rem)',
           background: 'rgba(12,12,12,0.98)',
           backdropFilter: 'blur(24px)',
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 40px 120px rgba(0,0,0,0.7)',
         }}
       >
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-[#ebebeb]" style={{ letterSpacing: '-0.03em' }}>
+        {/* ── Sticky header ─────────────────────────────────────────── */}
+        <div
+          className="flex items-center justify-between px-6 py-4 shrink-0"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-[#ebebeb] truncate" style={{ letterSpacing: '-0.03em' }}>
               {session.studentName}
             </h2>
-            <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)' }}>
+            <div className="tech-label truncate" style={{ color: 'rgba(235,235,235,0.4)' }}>
               {session.examName}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 glass rounded-full flex items-center justify-center transition-colors hover:text-red-400"
+            className="w-8 h-8 glass rounded-full flex items-center justify-center transition-colors hover:text-red-400 shrink-0 ml-3"
             aria-label="Close session details"
           >
             <LuX size={14} aria-hidden="true" />
           </button>
         </div>
 
-        {/* Live webcam feed */}
-        <div
-          className="relative rounded-2xl overflow-hidden mb-4"
-          style={{
-            aspectRatio: '4 / 3',
-            background: 'rgba(12,12,12,0.6)',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
-          {snapshot ? (
-            <img
-              src={snapshot}
-              alt={`Live feed from ${session.studentName}`}
-              className="w-full h-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ color: 'rgba(235,235,235,0.4)' }}>
-              <LuScanFace size={40} aria-hidden="true" />
-              <span className="tech-label" style={{ fontSize: 10 }}>WAITING FOR FEED...</span>
-            </div>
-          )}
-
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-            style={{ background: 'rgba(12,12,12,0.85)', border: '1px solid rgba(239,68,68,0.4)' }}
+        {/* ── Scrollable body ───────────────────────────────────────── */}
+        <div className="overflow-y-auto px-6 py-5 flex flex-col gap-5" style={{ minHeight: 0 }}>
+          {/* Live webcam feed */}
+          <div
+            className="relative rounded-2xl overflow-hidden"
+            style={{
+              aspectRatio: '4 / 3',
+              background: 'rgba(12,12,12,0.6)',
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}
           >
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#ef4444' }} />
-            <span className="tech-label" style={{ color: '#ef4444', fontSize: 9 }}>LIVE</span>
-          </div>
+            {snapshot ? (
+              <img
+                src={snapshot}
+                alt={`Live feed from ${session.studentName}`}
+                className="w-full h-full object-cover"
+                draggable={false}
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ color: 'rgba(235,235,235,0.4)' }}>
+                <LuScanFace size={40} aria-hidden="true" />
+                <span className="tech-label" style={{ fontSize: 10 }}>
+                  {isEnded ? 'SESSION ENDED — NO LIVE FEED' : 'WAITING FOR FEED…'}
+                </span>
+              </div>
+            )}
 
-          {snapshotAt && (
-            <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(12,12,12,0.85)', border: '1px solid rgba(255,255,255,0.1)' }}
+            <div
+              className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+              style={{
+                background: 'rgba(12,12,12,0.85)',
+                border: `1px solid ${isEnded ? 'rgba(235,235,235,0.2)' : 'rgba(239,68,68,0.4)'}`,
+              }}
             >
-              <span className="tech-label" style={{ color: 'rgba(235,235,235,0.6)', fontSize: 9 }}>
-                {new Date(snapshotAt).toLocaleTimeString()}
+              <span
+                className={isEnded ? 'w-1.5 h-1.5 rounded-full' : 'w-1.5 h-1.5 rounded-full animate-pulse'}
+                style={{ backgroundColor: isEnded ? 'rgba(235,235,235,0.35)' : '#ef4444' }}
+              />
+              <span className="tech-label" style={{ color: isEnded ? 'rgba(235,235,235,0.6)' : '#ef4444', fontSize: 9 }}>
+                {isEnded ? 'ENDED' : 'LIVE'}
               </span>
             </div>
-          )}
-        </div>
 
-        {/* Status + time */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          {[
-            { label: 'Status',     value: statusConfig[session.status]?.label ?? 'Unknown', color: statusConfig[session.status]?.color ?? '#ebebeb' },
-            { label: 'Elapsed',    value: session.elapsed, color: '#ebebeb' },
-            { label: 'Violations', value: session.violationCount, color: session.violationCount > 0 ? '#ef4444' : '#ccff00' },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="rounded-2xl p-3 text-center"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
-            >
-              <div className="text-lg font-bold" style={{ color: item.color }}>{item.value}</div>
-              <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>{item.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Violation timeline */}
-        <div className="tech-label mb-3" style={{ color: 'rgba(235,235,235,0.4)' }}>
-          VIOLATION TIMELINE
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-8" style={{ color: 'rgba(235,235,235,0.4)' }}>
-            <LuRefreshCw size={18} className="animate-spin mr-2" aria-hidden="true" />
-            Loading timeline...
-          </div>
-        ) : timeline.length > 0 ? (
-          <div className="flex flex-col gap-2 max-h-60 overflow-y-auto no-scrollbar">
-            {timeline.map((ev, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  borderLeft: `2px solid ${severityColors[ev.severity] ?? '#eab308'}`,
-                }}
+            {snapshotAt && (
+              <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(12,12,12,0.85)', border: '1px solid rgba(255,255,255,0.1)' }}
               >
-                <span className="tech-label shrink-0" style={{ color: 'rgba(235,235,235,0.4)' }}>
-                  {formatOffset(ev.timestamp)}
+                <span className="tech-label" style={{ color: 'rgba(235,235,235,0.6)', fontSize: 9 }}>
+                  {new Date(snapshotAt).toLocaleTimeString()}
                 </span>
-                <span className="text-sm text-[#ebebeb] capitalize">
-                  {(ev.eventType || '').replace(/_/g, ' ')}
-                </span>
-                <span
-                  className="ml-auto tech-label px-2 py-0.5 rounded-full shrink-0"
-                  style={{
-                    color: severityColors[ev.severity] ?? '#eab308',
-                    background: `${severityColors[ev.severity] ?? '#eab308'}1a`,
-                    fontSize: 9,
-                  }}
-                >
-                  {(ev.severity || '').toUpperCase()}
-                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Status + time */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Status',     value: statusConfig[session.status]?.label ?? (isEnded ? 'Ended' : 'Unknown'), color: statusConfig[session.status]?.color ?? 'rgba(235,235,235,0.6)' },
+              { label: 'Elapsed',    value: session.elapsed, color: '#ebebeb' },
+              { label: 'Violations', value: session.violationCount, color: session.violationCount > 0 ? '#ef4444' : '#ccff00' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="rounded-2xl p-3 text-center"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <div className="text-lg font-bold" style={{ color: item.color }}>{item.value}</div>
+                <div className="tech-label" style={{ color: 'rgba(235,235,235,0.4)', fontSize: 9 }}>{item.label}</div>
               </div>
             ))}
           </div>
-        ) : (
-          <div className="text-center py-8" style={{ color: 'rgba(235,235,235,0.3)' }}>
-            <LuCircleCheck size={32} className="mx-auto mb-2" style={{ color: '#ccff00' }} aria-hidden="true" />
-            <div className="text-sm">No violations recorded</div>
-          </div>
-        )}
 
-        {/* Admin actions */}
-        <div className="flex gap-3 mt-6 pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+          {/* Violation timeline */}
+          <div>
+            <div className="tech-label mb-3" style={{ color: 'rgba(235,235,235,0.4)' }}>
+              VIOLATION TIMELINE
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-8" style={{ color: 'rgba(235,235,235,0.4)' }}>
+                <LuRefreshCw size={18} className="animate-spin mr-2" aria-hidden="true" />
+                Loading timeline…
+              </div>
+            ) : timeline.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {timeline.map((ev, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      borderLeft: `2px solid ${severityColors[ev.severity] ?? '#eab308'}`,
+                    }}
+                  >
+                    <span className="tech-label shrink-0" style={{ color: 'rgba(235,235,235,0.4)' }}>
+                      {formatOffset(ev.timestamp)}
+                    </span>
+                    <span className="text-sm text-[#ebebeb] capitalize">
+                      {(ev.eventType || '').replace(/_/g, ' ')}
+                    </span>
+                    <span
+                      className="ml-auto tech-label px-2 py-0.5 rounded-full shrink-0"
+                      style={{
+                        color: severityColors[ev.severity] ?? '#eab308',
+                        background: `${severityColors[ev.severity] ?? '#eab308'}1a`,
+                        fontSize: 9,
+                      }}
+                    >
+                      {(ev.severity || '').toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8" style={{ color: 'rgba(235,235,235,0.3)' }}>
+                <LuCircleCheck size={32} className="mx-auto mb-2" style={{ color: '#ccff00' }} aria-hidden="true" />
+                <div className="text-sm">No violations recorded</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Sticky footer with actions ────────────────────────────── */}
+        <div
+          className="flex gap-3 px-6 py-4 shrink-0"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(12,12,12,0.6)' }}
+        >
           <button
             onClick={onClose}
             className="flex-1 py-2.5 rounded-2xl text-sm font-medium hover:bg-white/5 transition-all"
@@ -249,17 +296,18 @@ function SessionExpandedView({ session, onClose, onTerminated }) {
           </button>
           <button
             onClick={handleTerminate}
-            disabled={terminating}
-            className="flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+            disabled={terminating || isEnded}
+            className="flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: 'rgba(239,68,68,0.12)',
               border: '1px solid rgba(239,68,68,0.4)',
               color: '#f87171',
             }}
             aria-label={`Terminate session for ${session.studentName}`}
+            title={isEnded ? 'This session has already ended.' : undefined}
           >
             {terminating ? <LuRefreshCw size={14} className="animate-spin" /> : <LuOctagon size={14} />}
-            {terminating ? 'Terminating...' : 'Terminate Session'}
+            {terminating ? 'Terminating…' : isEnded ? 'Session Ended' : 'Terminate Session'}
           </button>
         </div>
       </motion.div>
@@ -289,21 +337,29 @@ export default function MonitoringPage() {
       const sec = Math.floor((elapsedMs % 60000) / 1000).toString().padStart(2, '0');
 
       const violations = s.totalViolations ?? 0;
-      const status =
-        violations >= 5 ? 'violation' :
-        violations >= 2 ? 'warning'   :
-        'focused';
+      const isActive = s.status === 'active';
+
+      // Status drives the card's colour. Terminal states win over live
+      // heuristics; otherwise fall back to violation-count buckets.
+      let status;
+      if (s.status === 'terminated')                    status = 'terminated';
+      else if (!isActive)                               status = 'ended';
+      else if (violations >= 5)                         status = 'violation';
+      else if (violations >= 2)                         status = 'warning';
+      else                                              status = 'focused';
 
       return {
         _normalized:    true,
-        id:             s._id,
+        id:             String(s._id),
         startedAt:      s.startedAt,
         studentName:    student?.fullName    ?? 'Unknown',
         examName:       exam?.title          ?? 'Unknown Exam',
         elapsed:        `${h}:${m}:${sec}`,
         status,
         violationCount: violations,
-        faceDetected:   s.status === 'active',
+        // Only assume face is being tracked while the session is still live.
+        faceDetected:   isActive,
+        ended:          !isActive,
       };
     }), []);
 
@@ -348,13 +404,23 @@ export default function MonitoringPage() {
       fetchSessions();
     };
 
-    const onSessionEnded = (data) => {
-      setSessions((prev) => prev.filter((s) => s.id !== data.sessionId?.toString()));
+    // Mark the card as ended rather than removing it — the list is a
+    // real-time monitor and administrators need to see which sessions have
+    // just wrapped up (until they refresh or the poll rehydrates the list).
+    const markEnded = (data, nextStatus) => {
+      const id = String(data?.sessionId ?? '');
+      if (!id) return;
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === id
+            ? { ...s, status: nextStatus, faceDetected: false, ended: true }
+            : s
+        )
+      );
     };
 
-    const onTerminated = (data) => {
-      setSessions((prev) => prev.filter((s) => s.id !== data.sessionId?.toString()));
-    };
+    const onSessionEnded = (data) => markEnded(data, 'ended');
+    const onTerminated  = (data) => markEnded(data, 'terminated');
 
     socket.on('server:violation-alert', onViolation);
     socket.on('server:session-started', onSessionStarted);
@@ -433,18 +499,24 @@ export default function MonitoringPage() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.07 }}
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ scale: session.ended ? 1.0 : 1.02 }}
                 onClick={() => setSelectedSession(session)}
                 className="rounded-[2rem] p-5 cursor-pointer transition-all duration-200 flex flex-col gap-4"
                 style={{
                   background: 'rgba(255,255,255,0.03)',
                   backdropFilter: 'blur(16px)',
-                  border: `1px solid ${session.status === 'violation' ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  border: `1px solid ${
+                    session.status === 'violation'  ? 'rgba(239,68,68,0.3)' :
+                    session.status === 'terminated' ? 'rgba(239,68,68,0.25)' :
+                    session.ended                   ? 'rgba(255,255,255,0.05)' :
+                                                      'rgba(255,255,255,0.08)'
+                  }`,
+                  opacity: session.ended ? 0.65 : 1,
                 }}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => e.key === 'Enter' && setSelectedSession(session)}
-                aria-label={`View session details for ${session.studentName}`}
+                aria-label={`View session details for ${session.studentName}${session.ended ? ' (session ended)' : ''}`}
               >
                 {/* Student info */}
                 <div className="flex items-center gap-3">
